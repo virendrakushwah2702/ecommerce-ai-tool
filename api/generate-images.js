@@ -25,10 +25,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         prompt: prompt,
-        image_urls: [imageUrl],
-        image_size: '1080x1080',
-        quality: 'low',
-        num_images: 1
+        image_urls: [imageUrl]
       })
     })
 
@@ -43,8 +40,7 @@ export default async function handler(req, res) {
       })
     }
 
-    const images = data.images || []
-    const firstImage = images[0]
+    const firstImage = (data.images || [])[0]
 
     if (!firstImage || !firstImage.url) {
       return res.status(200).json({
