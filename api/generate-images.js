@@ -26,7 +26,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         prompt: prompt,
         image_urls: [imageUrl],
-        image_size: 'square_hd',
+        image_size: '1080x1080',
         quality: 'low',
         num_images: 1
       })
