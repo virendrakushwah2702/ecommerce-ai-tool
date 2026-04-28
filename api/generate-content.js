@@ -27,7 +27,7 @@ export default async function handler(req, res) {
           },
           {
             role: 'user',
-            content: `You are both a world class eCommerce product photographer and Amazon India listing specialist. Generate 4 UNIQUE AI image generation prompts AND complete Amazon listing content for this specific product.
+            content: `You are both a world class eCommerce product photographer and Amazon India listing specialist. Generate 4 UNIQUE AI image generation prompts AND complete Amazon listing content for this specific product. CRITICAL: All text in images must be in English only. All text must be perfectly legible. Image size must be 1080x1080 pixels.
 
 Brand: ${brand}
 Product: ${productName}

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react"
+import { useState } from "react"
 
 const CATEGORIES = [
   "Hair Care", "Skin Care", "Personal Care",
@@ -7,7 +7,7 @@ const CATEGORIES = [
   "Cosmetics", "Ayurvedic and Natural"
 ]
 
-const PLATFORMS = ["Amazon", "Flipkart", "Meesho", "Own Website"]
+const PLATFORMS = ["Amazon", "Flipkart", "Meesho", "Own Website", "All Platforms"]
 
 const LOADING_MESSAGES = [
   "Analysing your product...",
@@ -18,39 +18,22 @@ const LOADING_MESSAGES = [
   "Almost ready..."
 ]
 
-export default function App() {
+function App() {
   const [screen, setScreen] = useState("home")
   const [brand, setBrand] = useState("")
   const [productName, setProductName] = useState("")
   const [category, setCategory] = useState("Hair Care")
-  const [material, setMaterial] = useState("")
   const [platform, setPlatform] = useState("Amazon")
+  const [material, setMaterial] = useState("")
   const [uploadedImage, setUploadedImage] = useState(null)
   const [uploadedImageUrl, setUploadedImageUrl] = useState(null)
   const [disclaimer, setDisclaimer] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingMsg, setLoadingMsg] = useState("")
-  const [loadingStep, setLoadingStep] = useState(0)
   const [result, setResult] = useState("")
   const [generatedImages, setGeneratedImages] = useState([])
   const [error, setError] = useState("")
-  const [copied, setCopied] = useState(false)
-  const fileInputRef = useRef(null)
 
-  // ── Upload image to fal.ai storage ──────────────────────────────
-  const uploadToFal = async (file) => {
-    const formData = new FormData()
-    formData.append("file", file)
-    const res = await fetch("/api/upload-image", {
-      method: "POST",
-      body: formData
-    })
-    const data = await res.json()
-    if (!data.success) throw new Error(data.error || "Upload failed")
-    return data.url
-  }
-
-  // ── Handle file selection ────────────────────────────────────────
   const handleFileChange = (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -58,40 +41,67 @@ export default function App() {
     setUploadedImageUrl(URL.createObjectURL(file))
   }
 
-  // ── Extract image prompts from content ──────────────────────────
+  const uploadToImgBB = async (file) => {
+    const res = await fetch('/api/upload-image', {
+      method: 'POST',
+      body: file,
+      headers: { 'X-File-Type': file.type }
+    })
+    const data = await res.json()
+    console.log("Upload result:", data)
+    if (!data.success) throw new Error(data.error || 'Upload failed')
+    return data.url
+  }
+
   const extractPrompts = (text) => {
     const prompts = []
-    const labels = ["Main Product Image", "Ingredients Infographic", "How To Use", "Key Benefits"]
+    const labels = ["Main Product Image", "What's Inside", "How To Use", "Key Benefits"]
     for (let i = 1; i <= 4; i++) {
-      const regex = new RegExp(`IMAGE_PROMPT_${i}:\\s*\\n([\\s\\S]*?)(?=IMAGE_PROMPT_${i + 1}:|LISTING_CONTENT:|$)`)
-      const match = text.match(regex)
-      if (match) prompts.push({ prompt: match[1].trim(), label: labels[i - 1] })
+      const marker = `IMAGE_PROMPT_${i}:`
+      const startIndex = text.indexOf(marker)
+      if (startIndex !== -1) {
+        const afterMarker = text.substring(startIndex + marker.length).trim()
+        const nextMarker = `IMAGE_PROMPT_${i + 1}:`
+        const endIndex = afterMarker.indexOf(nextMarker)
+        const promptText = endIndex !== -1
+          ? afterMarker.substring(0, endIndex).trim()
+          : afterMarker.substring(0, 800).trim()
+        const cleanPrompt = promptText.replace(/^\[/, "").replace(/\]$/, "").trim()
+        prompts.push({ prompt: cleanPrompt, label: labels[i - 1] })
+      }
     }
     return prompts
   }
 
-  // ── Generate images via fal.ai ───────────────────────────────────
-  const generateImages = async (prompts, falImageUrl) => {
-    const results = []
-    for (const { prompt, label } of prompts) {
+  const extractContent = (text) => {
+    const contentStart = text.indexOf("LISTING_CONTENT:")
+    if (contentStart !== -1) {
+      return text.substring(contentStart + 16).trim()
+        .replace(/\*\*/g, "").replace(/\*/g, "")
+    }
+    return text.replace(/\*\*/g, "").replace(/\*/g, "")
+  }
+
+  const generateImages = async (prompts, imageUrl) => {
+    const promises = prompts.map(async ({ prompt, label }) => {
       try {
+        console.log("Generating image for:", label)
         const res = await fetch("/api/generate-images", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imageUrl: falImageUrl, prompt, label })
+          body: JSON.stringify({ imageUrl, prompt, label })
         })
         const data = await res.json()
-        console.log("Image gen result:", data.success, label)
-        results.push({ ...data, label })
+        console.log("Image gen result:", label, data.success)
+        return { ...data, label }
       } catch (err) {
         console.error("Image gen error:", err)
-        results.push({ success: false, error: err.message, label })
+        return { success: false, error: err.message, label }
       }
-    }
-    return results
+    })
+    return Promise.all(promises)
   }
 
-  // ── Main generate handler ────────────────────────────────────────
   const handleGenerate = async () => {
     if (!brand || !productName || !material || !uploadedImage || !disclaimer) {
       setError("Please fill all fields, upload an image, and accept the disclaimer.")
@@ -101,25 +111,13 @@ export default function App() {
     setLoading(true)
     setGeneratedImages([])
     setResult("")
-    setScreen("loading")
-
-    // Cycle loading messages
-    let step = 0
-    const msgInterval = setInterval(() => {
-      step = (step + 1) % LOADING_MESSAGES.length
-      setLoadingMsg(LOADING_MESSAGES[step])
-      setLoadingStep(step)
-    }, 2500)
-
-    setLoadingMsg(LOADING_MESSAGES[0])
+    setScreen("result")
 
     try {
-      // Step 1 — Upload image
       setLoadingMsg("Uploading your product image...")
-      const falImageUrl = await uploadToFal(uploadedImage)
-      setUploadedImageUrl(falImageUrl)
+      const imgbbUrl = await uploadToImgBB(uploadedImage)
+      console.log("ImgBB URL:", imgbbUrl)
 
-      // Step 2 — Generate content
       setLoadingMsg("Writing listing content with AI...")
       const contentRes = await fetch("/api/generate-content", {
         method: "POST",
@@ -130,603 +128,202 @@ export default function App() {
       if (!contentData.success) throw new Error(contentData.error || "Content generation failed")
 
       const content = contentData.content
-      setResult(content)
+      setResult(extractContent(content))
 
-      // Step 3 — Extract prompts and generate images
       setLoadingMsg("Generating professional images...")
       const prompts = extractPrompts(content)
       console.log("Prompts extracted:", prompts.length)
 
       if (prompts.length > 0) {
-        const images = await generateImages(prompts, falImageUrl)
+        const images = await generateImages(prompts, imgbbUrl)
         setGeneratedImages(images)
       }
 
-      clearInterval(msgInterval)
       setLoading(false)
-      setScreen("result")
     } catch (err) {
-      clearInterval(msgInterval)
-      setLoading(false)
+      console.error("Generation error:", err)
       setError(err.message)
-      setScreen("form")
+      setLoading(false)
     }
   }
 
-  // ── Parse content sections ───────────────────────────────────────
-  const parseSection = (text, sectionName) => {
-    const regex = new RegExp(`${sectionName}:\\s*\\n([\\s\\S]*?)(?=\\n[A-Z][A-Z ]+:|$)`)
-    const match = text.match(regex)
-    return match ? match[1].trim() : ""
+  const inp = {
+    width: "100%",
+    padding: "12px",
+    fontSize: "15px",
+    border: "1.5px solid #e0d7ff",
+    borderRadius: "8px",
+    boxSizing: "border-box",
+    marginBottom: "16px",
+    fontFamily: "Arial",
+    background: "white"
   }
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
+  return (
+    <div style={{ minHeight: "100vh", background: "#f8f4ff", fontFamily: "Arial" }}>
 
-  const downloadImage = (imageUrl, label) => {
-    const a = document.createElement("a")
-    a.href = imageUrl
-    a.download = `${brand}-${label.replace(/\s/g, "-")}.png`
-    a.click()
-  }
-
-  const resetApp = () => {
-    setBrand("")
-    setProductName("")
-    setCategory("Hair Care")
-    setMaterial("")
-    setPlatform("Amazon")
-    setUploadedImage(null)
-    setUploadedImageUrl(null)
-    setDisclaimer(false)
-    setResult("")
-    setGeneratedImages([])
-    setError("")
-    setScreen("home")
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // SCREENS
-  // ════════════════════════════════════════════════════════════════
-
-  // ── HOME SCREEN ──────────────────────────────────────────────────
-  if (screen === "home") return (
-    <div style={styles.page}>
-      <div style={styles.homeWrap}>
-        <div style={styles.badge}>AI-Powered • Made for India</div>
-        <h1 style={styles.heroTitle}>
-          <span style={styles.heroAccent}>EcomImagined</span> AI
-        </h1>
-        <p style={styles.heroSub}>
-          Transform any product photo into professional Amazon-ready images and listing content in under 2 minutes.
-        </p>
-        <div style={styles.featureGrid}>
-          {[
-            { icon: "🖼️", title: "4 Pro Images", desc: "Main shot + 3 infographics in 1080×1080px" },
-            { icon: "✍️", title: "Full Listing", desc: "Title, bullets, description, keywords" },
-            { icon: "🛒", title: "Multi-Platform", desc: "Amazon, Flipkart, Meesho & more" },
-            { icon: "⚡", title: "2 Minutes", desc: "From raw photo to ready-to-publish" }
-          ].map((f, i) => (
-            <div key={i} style={styles.featureCard}>
-              <div style={styles.featureIcon}>{f.icon}</div>
-              <div style={styles.featureTitle}>{f.title}</div>
-              <div style={styles.featureDesc}>{f.desc}</div>
+      {screen === "home" && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "20px" }}>
+          <div style={{ background: "white", borderRadius: "20px", padding: "48px 40px", maxWidth: "540px", width: "100%", textAlign: "center" }}>
+            <div style={{ fontSize: "56px", marginBottom: "16px" }}>🛍️</div>
+            <h1 style={{ fontSize: "32px", color: "#4a00e0", marginBottom: "12px" }}>EcomImagined AI</h1>
+            <p style={{ color: "#666", fontSize: "16px", lineHeight: "1.6", marginBottom: "24px" }}>
+              Upload your product photo — get 4 professional AI images and complete Amazon listing in minutes
+            </p>
+            <div style={{ background: "#f0ebff", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+              <p style={{ color: "#4a00e0", fontWeight: "bold", margin: "0", fontSize: "14px" }}>🎁 Free Account — 6 Credits Included</p>
+              <p style={{ color: "#666", fontSize: "13px", margin: "8px 0 0" }}>1 complete product listing — absolutely free</p>
             </div>
-          ))}
-        </div>
-        <button style={styles.ctaBtn} onClick={() => setScreen("form")}>
-          Start Generating →
-        </button>
-        <p style={styles.freeNote}>✨ Free plan includes 6 credits — no card required</p>
-      </div>
-    </div>
-  )
-
-  // ── FORM SCREEN ──────────────────────────────────────────────────
-  if (screen === "form") return (
-    <div style={styles.page}>
-      <div style={styles.formWrap}>
-        {/* Header */}
-        <div style={styles.formHeader}>
-          <button style={styles.backBtn} onClick={() => setScreen("home")}>← Back</button>
-          <h2 style={styles.formTitle}>Product Details</h2>
-          <div style={styles.creditBadge}>6 Credits</div>
-        </div>
-
-        {error && <div style={styles.errorBox}>{error}</div>}
-
-        {/* Upload */}
-        <div style={styles.uploadBox} onClick={() => fileInputRef.current.click()}>
-          {uploadedImageUrl
-            ? <img src={uploadedImageUrl} alt="product" style={styles.uploadPreview} />
-            : <>
-              <div style={styles.uploadIcon}>📷</div>
-              <div style={styles.uploadText}>Tap to upload product photo</div>
-              <div style={styles.uploadSub}>JPG, PNG up to 10MB</div>
-            </>
-          }
-          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFileChange} />
-        </div>
-
-        {/* Form fields */}
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>Brand Name *</label>
-          <input style={styles.input} placeholder="e.g. Patanjali, Mamaearth" value={brand} onChange={e => setBrand(e.target.value)} />
-        </div>
-
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>Product Name *</label>
-          <input style={styles.input} placeholder="e.g. Bhringraj Hair Oil 200ml" value={productName} onChange={e => setProductName(e.target.value)} />
-        </div>
-
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>Category *</label>
-          <select style={styles.input} value={category} onChange={e => setCategory(e.target.value)}>
-            {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-          </select>
-        </div>
-
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>Platform *</label>
-          <div style={styles.platformRow}>
-            {PLATFORMS.map(p => (
-              <button
-                key={p}
-                style={{ ...styles.platformBtn, ...(platform === p ? styles.platformBtnActive : {}) }}
-                onClick={() => setPlatform(p)}
-              >{p}</button>
-            ))}
+            <div style={{ background: "#f0f7ff", borderRadius: "12px", padding: "12px 16px", marginBottom: "28px" }}>
+              <p style={{ color: "#0066cc", fontSize: "13px", margin: "0" }}>
+                ✅ AI Enhances Your Photo — ✅ 4 Professional Images — ✅ Amazon Compliant Content
+              </p>
+            </div>
+            <button onClick={() => setScreen("form")} style={{ background: "#4a00e0", color: "white", border: "none", padding: "16px", fontSize: "17px", borderRadius: "10px", cursor: "pointer", width: "100%" }}>
+              Get Started — It is Free →
+            </button>
           </div>
         </div>
+      )}
 
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>Key Ingredients / Materials *</label>
-          <textarea
-            style={{ ...styles.input, height: 90, resize: "vertical" }}
-            placeholder="e.g. Bhringraj, Amla, Coconut Oil, Brahmi, Neem..."
-            value={material}
-            onChange={e => setMaterial(e.target.value)}
-          />
-        </div>
+      {screen === "form" && (
+        <div style={{ maxWidth: "600px", margin: "0 auto", padding: "40px 20px" }}>
+          <button onClick={() => setScreen("home")} style={{ background: "none", border: "none", color: "#4a00e0", fontSize: "16px", cursor: "pointer", marginBottom: "20px" }}>← Back</button>
 
-        {/* Disclaimer */}
-        <div style={styles.disclaimerRow}>
-          <input type="checkbox" id="disc" checked={disclaimer} onChange={e => setDisclaimer(e.target.checked)} style={{ marginRight: 8 }} />
-          <label htmlFor="disc" style={styles.disclaimerText}>
-            I confirm all product information is accurate and I have rights to use this image.
-          </label>
-        </div>
+          <div style={{ background: "white", borderRadius: "16px", padding: "32px", marginBottom: "20px" }}>
+            <h2 style={{ color: "#4a00e0", marginBottom: "8px" }}>Tell Us About Your Product</h2>
+            <p style={{ color: "#666", fontSize: "14px", marginBottom: "24px" }}>Just 5 fields — our AI does everything else!</p>
 
-        <button
-          style={{ ...styles.ctaBtn, opacity: (!brand || !productName || !material || !uploadedImage || !disclaimer) ? 0.5 : 1 }}
-          onClick={handleGenerate}
-          disabled={!brand || !productName || !material || !uploadedImage || !disclaimer}
-        >
-          ⚡ Generate (3 Credits)
-        </button>
-      </div>
-    </div>
-  )
+            <label style={{ fontWeight: "bold", color: "#333", fontSize: "14px" }}>Brand Name *</label>
+            <input style={inp} placeholder="e.g. Jeevya, Himalaya, Wow" value={brand} onChange={e => setBrand(e.target.value)} />
 
-  // ── LOADING SCREEN ───────────────────────────────────────────────
-  if (screen === "loading") return (
-    <div style={styles.page}>
-      <div style={styles.loadingWrap}>
-        <div style={styles.loadingOrb} />
-        <h2 style={styles.loadingTitle}>Creating your content</h2>
-        <p style={styles.loadingMsg}>{loadingMsg}</p>
-        <div style={styles.loadingSteps}>
-          {LOADING_MESSAGES.map((msg, i) => (
-            <div key={i} style={{ ...styles.loadingDot, background: i <= loadingStep ? "#6c63ff" : "#e0e0e0" }} />
-          ))}
-        </div>
-        <p style={styles.loadingNote}>This takes 60–90 seconds. Please don't close this tab.</p>
-      </div>
-    </div>
-  )
+            <label style={{ fontWeight: "bold", color: "#333", fontSize: "14px" }}>Product Name *</label>
+            <input style={inp} placeholder="e.g. Bhringraj Hair Growth Oil 200ml" value={productName} onChange={e => setProductName(e.target.value)} />
 
-  // ── RESULT SCREEN ────────────────────────────────────────────────
-  if (screen === "result") {
-    const title = parseSection(result, "PRODUCT TITLE")
-    const bullets = []
-    for (let i = 1; i <= 5; i++) {
-      const b = parseSection(result, `BULLET POINT ${i}`)
-      if (b) bullets.push(b)
-    }
-    const description = parseSection(result, "PRODUCT DESCRIPTION")
-    const keywords = parseSection(result, "SEARCH TERMS AND KEYWORDS")
-    const flipkart = parseSection(result, "FLIPKART AND MEESHO SHORT DESCRIPTION")
+            <label style={{ fontWeight: "bold", color: "#333", fontSize: "14px" }}>Category *</label>
+            <select style={inp} value={category} onChange={e => setCategory(e.target.value)}>
+              {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+            </select>
 
-    return (
-      <div style={styles.page}>
-        <div style={styles.resultWrap}>
-          {/* Top bar */}
-          <div style={styles.resultHeader}>
-            <h2 style={styles.resultTitle}>Your Content is Ready! 🎉</h2>
-            <button style={styles.backBtn} onClick={resetApp}>← New Product</button>
+            <label style={{ fontWeight: "bold", color: "#333", fontSize: "14px" }}>Selling Platform *</label>
+            <select style={inp} value={platform} onChange={e => setPlatform(e.target.value)}>
+              {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+
+            <label style={{ fontWeight: "bold", color: "#333", fontSize: "14px" }}>Key Ingredients or Materials *</label>
+            <textarea style={{ ...inp, height: "80px", resize: "vertical" }} placeholder="e.g. Bhringraj, Amla, Brahmi, Neem, Coconut Oil" value={material} onChange={e => setMaterial(e.target.value)} />
           </div>
 
-          {/* Images */}
-          <section style={styles.section}>
-            <h3 style={styles.sectionTitle}>🖼️ Generated Images</h3>
-            <div style={styles.imageGrid}>
-              {generatedImages.length === 0 && (
-                <div style={styles.noImages}>Images could not be generated. Please try again.</div>
-              )}
-              {generatedImages.map((img, i) => (
-                <div key={i} style={styles.imageCard}>
-                  <div style={styles.imageLabel}>{img.label}</div>
-                  {img.success && img.imageUrl
-                    ? <>
-                      <img src={img.imageUrl} alt={img.label} style={styles.generatedImg} />
-                      <button style={styles.downloadBtn} onClick={() => downloadImage(img.imageUrl, img.label)}>
-                        ⬇ Download
-                      </button>
-                    </>
-                    : <div style={styles.imgError}>Generation failed: {img.error}</div>
-                  }
+          <div style={{ background: "white", borderRadius: "16px", padding: "32px", marginBottom: "20px" }}>
+            <h2 style={{ color: "#4a00e0", marginBottom: "8px" }}>Upload Your Product Photo *</h2>
+            <p style={{ color: "#666", fontSize: "14px", marginBottom: "20px" }}>Even a basic mobile photo works! Our AI creates 4 professional images.</p>
+            <div style={{ border: "2px dashed #c4b5ff", borderRadius: "12px", padding: "30px", textAlign: "center", background: "#faf8ff", cursor: "pointer" }}
+              onClick={() => document.getElementById('imageInput').click()}>
+              {uploadedImageUrl ? (
+                <div>
+                  <img src={uploadedImageUrl} alt="Uploaded" style={{ maxWidth: "180px", maxHeight: "180px", borderRadius: "8px", marginBottom: "12px" }} />
+                  <p style={{ color: "#4a00e0", fontSize: "14px", margin: "0" }}>✅ Image uploaded — click to change</p>
                 </div>
-              ))}
+              ) : (
+                <div>
+                  <div style={{ fontSize: "48px", marginBottom: "12px" }}>📷</div>
+                  <p style={{ color: "#4a00e0", fontWeight: "bold", margin: "0 0 8px" }}>Click to upload your product photo</p>
+                  <p style={{ color: "#999", fontSize: "13px", margin: "0" }}>JPG or PNG — any quality works!</p>
+                </div>
+              )}
             </div>
-          </section>
+            <input id="imageInput" type="file" accept="image/*" onChange={handleFileChange} style={{ display: "none" }} />
+          </div>
 
-          {/* Title */}
-          <section style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <h3 style={styles.sectionTitle}>📝 Product Title</h3>
-              <button style={styles.copyBtn} onClick={() => copyToClipboard(title)}>
-                {copied ? "✅ Copied!" : "Copy"}
-              </button>
+          <div style={{ background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+              <input type="checkbox" id="disclaimer" checked={disclaimer} onChange={e => setDisclaimer(e.target.checked)} style={{ marginTop: "3px", width: "18px", height: "18px", cursor: "pointer", flexShrink: 0 }} />
+              <label htmlFor="disclaimer" style={{ fontSize: "13px", color: "#555", lineHeight: "1.7", cursor: "pointer" }}>
+                I confirm that the product image belongs to my product and I have full rights to use it. EcomImagined AI is not responsible for any intellectual property disputes or listing rejections.
+              </label>
             </div>
-            <div style={styles.contentBox}>{title}</div>
-          </section>
+          </div>
 
-          {/* Bullets */}
-          <section style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <h3 style={styles.sectionTitle}>• Bullet Points</h3>
-              <button style={styles.copyBtn} onClick={() => copyToClipboard(bullets.join("\n\n"))}>Copy All</button>
-            </div>
-            {bullets.map((b, i) => (
-              <div key={i} style={styles.bulletBox}>
-                <span style={styles.bulletNum}>{i + 1}</span>
-                <span>{b}</span>
-              </div>
-            ))}
-          </section>
+          {error && <div style={{ background: "#fff0f0", borderRadius: "10px", padding: "12px", marginBottom: "16px", color: "#cc0000", fontSize: "14px" }}>{error}</div>}
 
-          {/* Description */}
-          <section style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <h3 style={styles.sectionTitle}>📄 Product Description</h3>
-              <button style={styles.copyBtn} onClick={() => copyToClipboard(description)}>Copy</button>
-            </div>
-            <div style={styles.contentBox}>{description}</div>
-          </section>
-
-          {/* Keywords */}
-          <section style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <h3 style={styles.sectionTitle}>🔍 Search Terms & Keywords</h3>
-              <button style={styles.copyBtn} onClick={() => copyToClipboard(keywords)}>Copy</button>
-            </div>
-            <div style={styles.contentBox}>{keywords}</div>
-          </section>
-
-          {/* Flipkart/Meesho */}
-          {flipkart && (
-            <section style={styles.section}>
-              <div style={styles.sectionHeader}>
-                <h3 style={styles.sectionTitle}>🛒 Flipkart / Meesho Description</h3>
-                <button style={styles.copyBtn} onClick={() => copyToClipboard(flipkart)}>Copy</button>
-              </div>
-              <div style={styles.contentBox}>{flipkart}</div>
-            </section>
-          )}
-
-          <button style={{ ...styles.ctaBtn, marginTop: 32 }} onClick={resetApp}>
-            ⚡ Generate Another Product
+          <button onClick={handleGenerate} style={{ width: "100%", background: "#4a00e0", color: "white", border: "none", padding: "18px", fontSize: "17px", borderRadius: "10px", cursor: "pointer", fontWeight: "bold" }}>
+            ✨ Generate My Amazon Listing Now
           </button>
         </div>
-      </div>
-    )
-  }
+      )}
+
+      {screen === "result" && (
+        <div style={{ maxWidth: "720px", margin: "0 auto", padding: "40px 20px" }}>
+          <button onClick={() => setScreen("form")} style={{ background: "none", border: "none", color: "#4a00e0", fontSize: "16px", cursor: "pointer", marginBottom: "20px" }}>← Back to Form</button>
+          <h2 style={{ color: "#4a00e0", marginBottom: "24px" }}>✨ Your Amazon Listing is Ready!</h2>
+
+          {loading ? (
+            <div style={{ background: "white", borderRadius: "16px", padding: "60px 40px", textAlign: "center" }}>
+              <div style={{ fontSize: "48px", marginBottom: "20px" }}>⏳</div>
+              <p style={{ color: "#4a00e0", fontWeight: "bold", fontSize: "18px", marginBottom: "8px" }}>Please wait...</p>
+              <p style={{ color: "#666", fontSize: "15px", lineHeight: "1.8" }}>{loadingMsg}</p>
+              <p style={{ color: "#999", fontSize: "13px", marginTop: "16px" }}>Do not close or refresh this page</p>
+              {generatedImages.filter(img => img.success).length > 0 && (
+                <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  {generatedImages.filter(img => img.success).map((img, i) => (
+                    <div key={i}>
+                      <p style={{ fontSize: "11px", color: "#666", marginBottom: "4px" }}>{img.label}</p>
+                      <img src={img.imageUrl} alt={img.label} style={{ width: "100%", borderRadius: "8px" }} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {generatedImages.filter(img => img.success).length > 0 && (
+                <div style={{ background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px" }}>
+                  <h3 style={{ color: "#4a00e0", marginBottom: "20px", fontSize: "18px" }}>🖼️ Your AI Generated Product Images</h3>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                    {generatedImages.filter(img => img.success).map((img, index) => (
+                      <div key={index} style={{ textAlign: "center" }}>
+                        <div style={{ background: "#f0ebff", padding: "5px 10px", borderRadius: "20px", marginBottom: "8px", display: "inline-block" }}>
+                          <p style={{ color: "#4a00e0", fontSize: "11px", fontWeight: "bold", margin: "0" }}>{img.label}</p>
+                        </div>
+                        <img src={img.imageUrl} alt={img.label} style={{ width: "100%", borderRadius: "8px", border: "1px solid #e0d7ff" }} />
+                      </div>
+                    ))}
+                  </div>
+                  <p style={{ color: "#886000", fontSize: "13px", marginTop: "16px", textAlign: "center" }}>
+                    🔒 Download without watermark available on paid plans only
+                  </p>
+                </div>
+              )}
+
+              {result && (
+                <>
+                  <div style={{ background: "white", borderRadius: "16px", padding: "32px", lineHeight: "1.9", fontSize: "15px", color: "#333", marginBottom: "20px", whiteSpace: "pre-wrap" }}>
+                    {result}
+                  </div>
+                  <div style={{ background: "#f0f7ff", borderRadius: "12px", padding: "16px", marginBottom: "20px", border: "1px solid #c0d8ff" }}>
+                    <p style={{ color: "#0055aa", fontSize: "13px", margin: "0", fontWeight: "bold" }}>⚠️ Important Disclaimer</p>
+                    <p style={{ color: "#0055aa", fontSize: "13px", margin: "8px 0 0", lineHeight: "1.7" }}>
+                      This content is AI generated. Please review carefully before publishing. EcomImagined AI is not responsible for any listing rejections.
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", gap: "12px" }}>
+                    <button onClick={() => { navigator.clipboard.writeText(result); alert("Content copied!") }}
+                      style={{ flex: 1, background: "#4a00e0", color: "white", border: "none", padding: "14px", fontSize: "15px", borderRadius: "10px", cursor: "pointer" }}>
+                      📋 Copy All Content
+                    </button>
+                    <button onClick={() => { setScreen("form"); setResult(""); setGeneratedImages([]); setUploadedImage(null); setUploadedImageUrl(null); setDisclaimer(false); setError("") }}
+                      style={{ flex: 1, background: "white", color: "#4a00e0", border: "2px solid #4a00e0", padding: "14px", fontSize: "15px", borderRadius: "10px", cursor: "pointer" }}>
+                      🔄 Generate Another
+                    </button>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
-// ════════════════════════════════════════════════════════════════
-// STYLES
-// ════════════════════════════════════════════════════════════════
-const styles = {
-  page: {
-    minHeight: "100vh",
-    background: "linear-gradient(135deg, #0f0c29 0%, #1a1a2e 50%, #16213e 100%)",
-    fontFamily: "'Segoe UI', sans-serif",
-    color: "#fff",
-    padding: "0 0 60px 0"
-  },
-  homeWrap: {
-    maxWidth: 680,
-    margin: "0 auto",
-    padding: "60px 24px 40px",
-    textAlign: "center"
-  },
-  badge: {
-    display: "inline-block",
-    background: "rgba(108,99,255,0.2)",
-    border: "1px solid rgba(108,99,255,0.5)",
-    color: "#a89cff",
-    borderRadius: 20,
-    padding: "6px 18px",
-    fontSize: 13,
-    marginBottom: 24,
-    letterSpacing: 1
-  },
-  heroTitle: {
-    fontSize: "clamp(36px, 8vw, 64px)",
-    fontWeight: 800,
-    margin: "0 0 16px",
-    lineHeight: 1.1,
-    letterSpacing: -1
-  },
-  heroAccent: {
-    background: "linear-gradient(90deg, #6c63ff, #f64f59)",
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent"
-  },
-  heroSub: {
-    fontSize: 18,
-    color: "#a0aec0",
-    lineHeight: 1.6,
-    marginBottom: 40,
-    maxWidth: 500,
-    margin: "0 auto 40px"
-  },
-  featureGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: 16,
-    marginBottom: 40
-  },
-  featureCard: {
-    background: "rgba(255,255,255,0.05)",
-    border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: 16,
-    padding: "20px 16px",
-    textAlign: "left"
-  },
-  featureIcon: { fontSize: 28, marginBottom: 8 },
-  featureTitle: { fontWeight: 700, fontSize: 15, marginBottom: 4 },
-  featureDesc: { fontSize: 13, color: "#718096" },
-  ctaBtn: {
-    background: "linear-gradient(90deg, #6c63ff, #f64f59)",
-    color: "#fff",
-    border: "none",
-    borderRadius: 14,
-    padding: "16px 40px",
-    fontSize: 17,
-    fontWeight: 700,
-    cursor: "pointer",
-    width: "100%",
-    maxWidth: 400,
-    transition: "transform 0.2s",
-    display: "block",
-    margin: "0 auto"
-  },
-  freeNote: { color: "#718096", fontSize: 13, marginTop: 16 },
-
-  // Form
-  formWrap: { maxWidth: 560, margin: "0 auto", padding: "32px 20px" },
-  formHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 24
-  },
-  formTitle: { fontSize: 22, fontWeight: 700, margin: 0 },
-  backBtn: {
-    background: "rgba(255,255,255,0.08)",
-    border: "1px solid rgba(255,255,255,0.15)",
-    color: "#fff",
-    borderRadius: 8,
-    padding: "8px 14px",
-    cursor: "pointer",
-    fontSize: 13
-  },
-  creditBadge: {
-    background: "rgba(108,99,255,0.3)",
-    border: "1px solid #6c63ff",
-    color: "#a89cff",
-    borderRadius: 20,
-    padding: "4px 12px",
-    fontSize: 13,
-    fontWeight: 600
-  },
-  errorBox: {
-    background: "rgba(246,79,89,0.15)",
-    border: "1px solid rgba(246,79,89,0.4)",
-    borderRadius: 10,
-    padding: "12px 16px",
-    marginBottom: 20,
-    color: "#fc8181",
-    fontSize: 14
-  },
-  uploadBox: {
-    border: "2px dashed rgba(108,99,255,0.5)",
-    borderRadius: 16,
-    padding: 32,
-    textAlign: "center",
-    cursor: "pointer",
-    marginBottom: 24,
-    background: "rgba(108,99,255,0.05)",
-    minHeight: 140,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "border-color 0.2s"
-  },
-  uploadPreview: { maxHeight: 180, maxWidth: "100%", borderRadius: 10, objectFit: "contain" },
-  uploadIcon: { fontSize: 36, marginBottom: 8 },
-  uploadText: { fontWeight: 600, fontSize: 15 },
-  uploadSub: { color: "#718096", fontSize: 13, marginTop: 4 },
-  fieldGroup: { marginBottom: 20 },
-  label: { display: "block", fontSize: 13, fontWeight: 600, color: "#a0aec0", marginBottom: 8, letterSpacing: 0.5 },
-  input: {
-    width: "100%",
-    background: "rgba(255,255,255,0.07)",
-    border: "1px solid rgba(255,255,255,0.15)",
-    borderRadius: 10,
-    padding: "12px 14px",
-    color: "#fff",
-    fontSize: 15,
-    outline: "none",
-    boxSizing: "border-box",
-    fontFamily: "inherit"
-  },
-  platformRow: { display: "flex", gap: 8, flexWrap: "wrap" },
-  platformBtn: {
-    background: "rgba(255,255,255,0.07)",
-    border: "1px solid rgba(255,255,255,0.15)",
-    color: "#a0aec0",
-    borderRadius: 8,
-    padding: "8px 16px",
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 600
-  },
-  platformBtnActive: {
-    background: "rgba(108,99,255,0.3)",
-    border: "1px solid #6c63ff",
-    color: "#fff"
-  },
-  disclaimerRow: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: 8,
-    marginBottom: 24,
-    padding: "14px",
-    background: "rgba(255,255,255,0.04)",
-    borderRadius: 10
-  },
-  disclaimerText: { fontSize: 13, color: "#a0aec0", lineHeight: 1.5, cursor: "pointer" },
-
-  // Loading
-  loadingWrap: {
-    maxWidth: 400,
-    margin: "0 auto",
-    padding: "100px 24px",
-    textAlign: "center"
-  },
-  loadingOrb: {
-    width: 80,
-    height: 80,
-    borderRadius: "50%",
-    background: "linear-gradient(135deg, #6c63ff, #f64f59)",
-    margin: "0 auto 32px",
-    animation: "pulse 2s ease-in-out infinite"
-  },
-  loadingTitle: { fontSize: 24, fontWeight: 700, marginBottom: 12 },
-  loadingMsg: { color: "#a0aec0", fontSize: 16, marginBottom: 24, minHeight: 24 },
-  loadingSteps: { display: "flex", justifyContent: "center", gap: 8, marginBottom: 24 },
-  loadingDot: { width: 8, height: 8, borderRadius: "50%", transition: "background 0.5s" },
-  loadingNote: { color: "#4a5568", fontSize: 13 },
-
-  // Result
-  resultWrap: { maxWidth: 720, margin: "0 auto", padding: "32px 20px" },
-  resultHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 32
-  },
-  resultTitle: { fontSize: 22, fontWeight: 700, margin: 0 },
-  section: {
-    background: "rgba(255,255,255,0.04)",
-    border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20
-  },
-  sectionHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
-  sectionTitle: { fontSize: 16, fontWeight: 700, margin: 0 },
-  copyBtn: {
-    background: "rgba(108,99,255,0.2)",
-    border: "1px solid rgba(108,99,255,0.4)",
-    color: "#a89cff",
-    borderRadius: 8,
-    padding: "6px 14px",
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 600
-  },
-  contentBox: {
-    background: "rgba(0,0,0,0.2)",
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 14,
-    lineHeight: 1.7,
-    color: "#e2e8f0",
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word"
-  },
-  bulletBox: {
-    display: "flex",
-    gap: 12,
-    alignItems: "flex-start",
-    background: "rgba(0,0,0,0.2)",
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 10,
-    fontSize: 14,
-    lineHeight: 1.6,
-    color: "#e2e8f0"
-  },
-  bulletNum: {
-    background: "linear-gradient(135deg, #6c63ff, #f64f59)",
-    color: "#fff",
-    borderRadius: "50%",
-    width: 24,
-    height: 24,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 12,
-    fontWeight: 700,
-    flexShrink: 0,
-    marginTop: 2
-  },
-  imageGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-    gap: 16
-  },
-  imageCard: {
-    background: "rgba(0,0,0,0.3)",
-    borderRadius: 12,
-    overflow: "hidden",
-    border: "1px solid rgba(255,255,255,0.08)"
-  },
-  imageLabel: {
-    padding: "10px 14px",
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#a89cff",
-    borderBottom: "1px solid rgba(255,255,255,0.06)"
-  },
-  generatedImg: { width: "100%", aspectRatio: "1/1", objectFit: "cover", display: "block" },
-  downloadBtn: {
-    width: "100%",
-    background: "rgba(108,99,255,0.2)",
-    border: "none",
-    color: "#a89cff",
-    padding: "10px",
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 600
-  },
-  imgError: { padding: 16, fontSize: 13, color: "#fc8181" },
-  noImages: { gridColumn: "1/-1", textAlign: "center", padding: 32, color: "#718096" }
-} 
+export default App

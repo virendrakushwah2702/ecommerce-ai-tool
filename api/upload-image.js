@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const FAL_KEY = process.env.FAL_KEY
+    const IMGBB_KEY = process.env.IMGBB_KEY
     const chunks = []
 
     for await (const chunk of req) {
@@ -16,39 +16,31 @@ export default async function handler(req, res) {
     }
 
     const buffer = Buffer.concat(chunks)
-    const contentType = req.headers['x-file-type'] || 'image/jpeg'
+    const base64 = buffer.toString('base64')
 
-    const initiateResponse = await fetch('https://rest.fal.ai/storage/upload/initiate', {
+    const formData = new URLSearchParams()
+    formData.append('key', IMGBB_KEY)
+    formData.append('image', base64)
+
+    const response = await fetch('https://api.imgbb.com/1/upload', {
       method: 'POST',
-      headers: {
-        'Authorization': `Key ${FAL_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        content_type: contentType,
-        file_name: 'product.jpg'
-      })
+      body: formData
     })
 
-    const initiateData = await initiateResponse.json()
+    const data = await response.json()
+    console.log("ImgBB response:", JSON.stringify(data).substring(0, 200))
 
-    if (initiateData.upload_url) {
-      await fetch(initiateData.upload_url, {
-        method: 'PUT',
-        headers: { 'Content-Type': contentType },
-        body: buffer
-      })
-
+    if (data.success && data.data && data.data.url) {
       return res.status(200).json({
         success: true,
-        url: initiateData.file_url
+        url: data.data.url
       })
     }
 
     return res.status(200).json({
       success: false,
-      error: 'Upload failed',
-      details: initiateData
+      error: 'ImgBB upload failed',
+      details: data
     })
 
   } catch (error) {
