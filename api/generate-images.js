@@ -15,8 +15,21 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: 'FAL_KEY not configured' })
     }
 
+    console.log("Fetching source image for:", label)
+
+    // Fetch the image and convert to base64 data URI
+    const sourceRes = await fetch(imageUrl)
+    if (!sourceRes.ok) {
+      return res.status(200).json({ success: false, error: 'Could not fetch source image' })
+    }
+    const sourceBuffer = await sourceRes.arrayBuffer()
+    const sourceB64 = Buffer.from(sourceBuffer).toString('base64')
+    const mimeType = sourceRes.headers.get('content-type') || 'image/jpeg'
+    const dataUri = `data:${mimeType};base64,${sourceB64}`
+
     console.log("Calling fal.ai for:", label)
 
+    // Send as base64 data URI — fal.ai accepts this directly
     const response = await fetch('https://fal.run/fal-ai/gpt-image-1.5/edit', {
       method: 'POST',
       headers: {
@@ -25,7 +38,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         prompt: prompt,
-        image_urls: [imageUrl]
+        image_urls: [dataUri]
       })
     })
 
@@ -41,7 +54,6 @@ export default async function handler(req, res) {
     }
 
     const firstImage = (data.images || [])[0]
-
     if (!firstImage || !firstImage.url) {
       return res.status(200).json({
         success: false,
