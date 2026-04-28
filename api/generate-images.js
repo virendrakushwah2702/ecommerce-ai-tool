@@ -15,36 +15,35 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: 'FAL_KEY not configured' })
     }
 
-    // Step 1: Fetch the product image as a buffer
-    const imageRes = await fetch(imageUrl)
-    if (!imageRes.ok) {
-      return res.status(400).json({ success: false, error: 'Could not fetch product image' })
+    if (!imageUrl || !prompt) {
+      return res.status(400).json({ success: false, error: 'imageUrl and prompt are required' })
     }
-    const imageBuffer = await imageRes.arrayBuffer()
-    const imageBlob = new Blob([imageBuffer], { type: 'image/png' })
 
-    // Step 2: Build multipart/form-data (fal.ai edit requires file upload)
-    const formData = new FormData()
-    formData.append('image', imageBlob, 'product.png')
-    formData.append('prompt', prompt)
-    formData.append('size', '1024x1024')
-    formData.append('quality', 'low')
-    formData.append('n', '1')
+    console.log("Calling fal.ai for:", label)
+    console.log("Image URL:", imageUrl.substring(0, 80))
 
-    // Step 3: Call fal.ai
-    const response = await fetch('https://fal.run/fal-ai/gpt-image-1/edit', {
+    // fal.ai gpt-image-1 edit endpoint — sends JSON with image_url
+    const response = await fetch('https://fal.run/fal-ai/gpt-image-1/image-to-image', {
       method: 'POST',
       headers: {
-        'Authorization': `Key ${FAL_KEY}`
-        // DO NOT set Content-Type — FormData sets it automatically with boundary
+        'Authorization': `Key ${FAL_KEY}`,
+        'Content-Type': 'application/json'
       },
-      body: formData
+      body: JSON.stringify({
+        image_url: imageUrl,
+        prompt: prompt,
+        strength: 0.85,
+        image_size: 'square_hd',
+        num_images: 1,
+        output_format: 'jpeg'
+      })
     })
 
     const data = await response.json()
-    console.log("fal.ai response:", JSON.stringify(data).substring(0, 500))
+    console.log("fal.ai raw response:", JSON.stringify(data).substring(0, 400))
 
     if (!response.ok) {
+      console.error("fal.ai HTTP error:", response.status, data)
       return res.status(200).json({
         success: false,
         error: `fal.ai error ${response.status}`,
@@ -52,48 +51,54 @@ export default async function handler(req, res) {
       })
     }
 
-    // Step 4: Extract image — fal.ai returns images[] array with url or b64_json
-    const images = data.images || data.image_urls || []
+    // fal.ai returns: { images: [{ url: "...", content_type: "image/jpeg" }] }
+    const images = data.images || []
     const firstImage = images[0]
 
     if (!firstImage) {
+      console.error("No images in fal.ai response:", data)
       return res.status(200).json({
         success: false,
-        error: 'No image in response',
+        error: 'No image returned from fal.ai',
         details: data
       })
     }
 
-    // b64_json path
-    if (firstImage.b64_json) {
+    // Get image URL from response
+    const resultUrl = firstImage.url || firstImage
+
+    if (!resultUrl) {
       return res.status(200).json({
-        success: true,
-        imageUrl: `data:image/png;base64,${firstImage.b64_json}`,
-        label
+        success: false,
+        error: 'Could not extract image URL',
+        details: data
       })
     }
 
-    // url path — fetch and convert to base64
-    const imgUrl = firstImage.url || firstImage
-    if (imgUrl && typeof imgUrl === 'string') {
-      const imgRes = await fetch(imgUrl)
-      const buffer = await imgRes.arrayBuffer()
-      const b64 = Buffer.from(buffer).toString('base64')
+    // Fetch image and convert to base64 for frontend display
+    const imgRes = await fetch(resultUrl)
+    if (!imgRes.ok) {
       return res.status(200).json({
-        success: true,
-        imageUrl: `data:image/png;base64,${b64}`,
-        label
+        success: false,
+        error: 'Could not fetch generated image'
       })
     }
+
+    const buffer = await imgRes.arrayBuffer()
+    const b64 = Buffer.from(buffer).toString('base64')
+    const mimeType = firstImage.content_type || 'image/jpeg'
 
     return res.status(200).json({
-      success: false,
-      error: 'Could not parse image from response',
-      details: data
+      success: true,
+      imageUrl: `data:${mimeType};base64,${b64}`,
+      label
     })
 
   } catch (error) {
     console.error('generate-images error:', error)
-    return res.status(500).json({ success: false, error: error.message })
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    })
   }
 }
