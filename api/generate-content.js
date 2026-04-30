@@ -7,6 +7,11 @@ export default async function handler(req, res) {
     return res.status(200).end()
   }
 
+  const origin = req.headers.origin || req.headers.referer || ''
+  if (!origin.includes('ecom-imagined-ai.vercel.app') && !origin.includes('localhost') && !origin.includes('imaginedai.in')) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+
   try {
     const { brand, productName, category, material, platform } = req.body
     const CEREBRAS_KEY = process.env.CEREBRAS_KEY
@@ -74,7 +79,7 @@ PRODUCT DESCRIPTION:
 (Minimum 500 words. Write in flowing paragraphs — no bullet points inside description. Cover these sections naturally: Opening paragraph introducing ${productName} and its core promise. Second paragraph covering each ingredient from ${material} and its specific traditional or scientific benefit. Third paragraph on how to use ${productName} step by step. Fourth paragraph on who this product is for and what problems it solves. Fifth paragraph on what makes ${brand} philosophy different. Closing paragraph with what is in the box and any usage tips. Include long tail keywords naturally throughout. Amazon policy compliant. No promotional language. No unverified health claims.)
 
 SEARCH TERMS AND KEYWORDS:
-(30 high volume search terms Indian buyers use on Amazon and Flipkart for ${category} products like ${productName}. Mix of short tail and long tail keywords. Include Hindi transliterated keywords relevant to ${category}. Include ingredient specific keywords from ${material}. One keyword or phrase per line. No commas between keywords on same line.)
+(List 30 search terms Indian buyers use on Amazon and Flipkart for ${category} products like ${productName}. Format EACH line exactly as: keyword | VOLUME where VOLUME is one of VERY HIGH, HIGH, or MEDIUM. Example line: bhringraj hair oil | VERY HIGH. You MUST assign VERY HIGH to top 8 most searched keywords, HIGH to next 12, MEDIUM to remaining 10. Mix short tail and long tail keywords. Include Hindi transliterated keywords. One keyword per line only.)
 
 FLIPKART AND MEESHO SHORT DESCRIPTION:
 (100 words maximum. Warm conversational tone appropriate for Indian buyers. Highlight top 3 specific benefits of ${productName}. Mention key ingredients from ${material}. Primary category keyword included naturally. End with a gentle call to action.)`

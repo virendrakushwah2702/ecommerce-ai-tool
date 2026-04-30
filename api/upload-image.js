@@ -7,6 +7,11 @@ export default async function handler(req, res) {
     return res.status(200).end()
   }
 
+  const origin = req.headers.origin || req.headers.referer || ''
+  if (!origin.includes('ecom-imagined-ai.vercel.app') && !origin.includes('localhost') && !origin.includes('imaginedai.in')) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+
   try {
     const IMGBB_KEY = process.env.IMGBB_KEY
     const chunks = []

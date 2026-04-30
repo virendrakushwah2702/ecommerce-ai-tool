@@ -7,6 +7,11 @@ export default async function handler(req, res) {
     return res.status(200).end()
   }
 
+  const origin = req.headers.origin || req.headers.referer || ''
+  if (!origin.includes('ecom-imagined-ai.vercel.app') && !origin.includes('localhost') && !origin.includes('imaginedai.in')) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+
   try {
     const { imageUrl, prompt, label } = req.body
     const FAL_KEY = process.env.FAL_KEY
@@ -18,8 +23,8 @@ export default async function handler(req, res) {
     const isMainImage = label === "Main Product Image"
 
     const enhancedPrompt = isMainImage
-      ? `${prompt} CRITICAL: Keep the product label and branding EXACTLY as shown in the input image. Do not change any text on the label. Only improve lighting, background to pure white, and overall quality. All text must be in English only.`
-      : `${prompt} CRITICAL: All text must be in clear English only. Text must be perfectly legible. Professional eCommerce infographic design. Output must be exactly 1024x1024 pixels square format.`
+      ? `Transform the background of this exact product image to pure white RGB 255 255 255. Keep the product EXACTLY as it is — same shape, same label, same colors, same text, same design. Do not modify the product in any way. Only change the background to white. Professional studio lighting. Square 1024x1024 pixels output only.`
+      : `Create a professional eCommerce infographic using this EXACT product as shown in the input image. The product must appear IDENTICAL — same bottle shape, same label design, same colors, same text. Do not reimagine or redesign the product. ${prompt} All text in English only. Square 1024x1024 pixels output only.`
 
     const response = await fetch('https://fal.run/openai/gpt-image-2/edit', {
       method: 'POST',
@@ -32,8 +37,7 @@ export default async function handler(req, res) {
         prompt: enhancedPrompt,
         size: '1024x1024',
         quality: 'low',
-        n: 1,
-        output_format: 'png'
+        n: 1
       })
     })
 
