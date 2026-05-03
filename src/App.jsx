@@ -106,6 +106,7 @@ function App() {
   }
   const [whatsappNumber, setWhatsappNumber] = useState("")
   const [whatsappCaptured, setWhatsappCaptured] = useState(false)
+  const [resultsUnlocked, setResultsUnlocked] = useState(false)
   const [whatsappError, setWhatsappError] = useState("")
   const [discountKey, setDiscountKey] = useState("")
   const [discountMsg, setDiscountMsg] = useState("")
@@ -419,6 +420,7 @@ useEffect(() => {
     setLoading(true)
     setGeneratedImages([])
     setResult("")
+    setResultsUnlocked(false)
     setScreen("result")
 
     try {
@@ -865,6 +867,26 @@ useEffect(() => {
           <button onClick={() => setScreen("form")} style={{ background: "none", border: "none", color: "#4a00e0", fontSize: "16px", cursor: "pointer", marginBottom: "20px" }}>← Generate Another</button>
           <h2 style={{ color: "#4a00e0", marginBottom: "24px" }}>✨ Your Professional Listing is Ready!</h2>
 
+          {!loading && !resultsUnlocked && (
+            <div style={{ background: "white", borderRadius: "16px", padding: "32px", marginBottom: "20px", textAlign: "center", border: "2px solid #25D366" }}>
+              <div style={{ fontSize: "48px", marginBottom: "12px" }}>📱</div>
+              <h3 style={{ color: "#25D366", marginBottom: "8px", fontSize: "20px" }}>Get Your Results On WhatsApp!</h3>
+              <p style={{ color: "#666", fontSize: "14px", lineHeight: "1.7", marginBottom: "20px" }}>
+                Tap below to receive your complete listing content, 12 keywords with search volume and 5 demo image sets directly on WhatsApp!
+              </p>
+              <button onClick={() => {
+                const message = encodeURIComponent(`Hi Imagined AI! Please send me my listing results for ${productName} in ${category} category. My email is ${user?.email}`)
+                window.open(`https://wa.me/919201462802?text=${message}`, '_blank')
+                setWhatsappCaptured(true)
+                setResultsUnlocked(true)
+              }}
+                style={{ width: "100%", background: "#25D366", color: "white", border: "none", padding: "16px", fontSize: "17px", borderRadius: "10px", cursor: "pointer", fontWeight: "bold", marginBottom: "12px" }}>
+                📱 Send To Imagined AI WhatsApp →
+              </button>
+              <p style={{ color: "#999", fontSize: "12px" }}>Your results will also be shown below</p>
+            </div>
+          )}
+
           {loading ? (
             <div style={{ background: "white", borderRadius: "16px", padding: "60px 40px", textAlign: "center" }}>
               <div style={{ 
@@ -905,6 +927,12 @@ useEffect(() => {
                   ))}
                 </div>
               )}
+            </div>
+          ) : !resultsUnlocked ? (
+            <div style={{ background: "white", borderRadius: "16px", padding: "40px", textAlign: "center" }}>
+              <p style={{ fontSize: "48px", marginBottom: "16px" }}>🔒</p>
+              <h3 style={{ color: "#4a00e0", marginBottom: "8px" }}>Your Results Are Ready!</h3>
+              <p style={{ color: "#666", fontSize: "14px" }}>Click the WhatsApp button above to unlock your complete listing!</p>
             </div>
           ) : (
             <>
@@ -1034,7 +1062,7 @@ useEffect(() => {
                 </div>
               )}
 
-              {credits >= 10 && generatedImages.filter(img => img.success).length > 0 && (
+              {whatsappCaptured && credits >= 10 && generatedImages.filter(img => img.success).length > 0 && (
                 <div style={{ background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px" }}>
                   <h3 style={{ color: "#4a00e0", marginBottom: "20px", fontSize: "18px" }}>🖼️ Your AI Generated Product Images</h3>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
