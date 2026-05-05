@@ -745,6 +745,7 @@ useEffect(() => {
               <span onClick={() => setScreen("privacy")} style={{ color: "#999", fontSize: "12px", cursor: "pointer" }}>Privacy Policy</span>
               <span onClick={() => setScreen("terms")} style={{ color: "#999", fontSize: "12px", cursor: "pointer" }}>Terms</span>
               <span onClick={() => setScreen("refund")} style={{ color: "#999", fontSize: "12px", cursor: "pointer" }}>Refund Policy</span>
+              <p style={{ color: "#999", fontSize: "11px", marginTop: "8px", textAlign: "center" }}>© 2026 JNKB Enterprises | Imagined AI</p>
             </div>
           </div>
         </div>
