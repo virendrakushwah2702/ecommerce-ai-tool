@@ -117,7 +117,7 @@ function App() {
     try {
       const { data, error } = await supabase
         .from('generations')
-        .select('id, brand, product_name, category, content, image_urls, created_at')
+        .select('id, brand, product_name, category, image_urls, created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(20)
@@ -134,18 +134,12 @@ function App() {
             brand: item.brand,
             productName: item.product_name,
             category: item.category,
-            content: item.content || '',
             images: imgs,
             date: new Date(item.created_at).toLocaleDateString('en-IN')
           }
         }))
-        const last = data[0]
-        const lastImgs = Array.isArray(last.image_urls)
-          ? last.image_urls
-          : (last.image_urls ? (() => { try { return JSON.parse(last.image_urls) } catch { return [] } })() : [])
-        setResult(last.content || '')
-        setGeneratedImages(lastImgs.map(img => ({ ...img, imageUrl: img.url, success: true })))
-        setLastGeneration(last)
+      } else {
+        setHistory([])
       }
     } catch (err) {
       console.error('History load exception:', err.message)
@@ -156,11 +150,11 @@ function App() {
 useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) { loadCredits(session.user.id); loadHistory(session.user.id) }
+      if (session?.user) { loadCredits(session.user.id) }
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) { loadCredits(session.user.id); loadHistory(session.user.id) }
+      if (session?.user) { loadCredits(session.user.id) }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -494,7 +488,6 @@ useEffect(() => {
           image_urls: successfulImages.map(img => ({ url: img.imageUrl, label: img.label }))
         })
         console.log("Generation save error:", genError)
-        await loadHistory(user.id)
       } else if (credits < 10) {
         await deductCredits(user.id, 1)
         const { error: genError2 } = await supabase.from('generations').insert({
@@ -506,7 +499,6 @@ useEffect(() => {
           image_urls: []
         })
         console.log("Generation save error free:", genError2)
-        await loadHistory(user.id)
       }
       setLoading(false)
     } catch (err) {
@@ -756,7 +748,7 @@ useEffect(() => {
                   </button>
                 </div>
                 {discountMsg && <p style={{ fontSize: "13px", color: discountMsg.includes("✅") ? "green" : "red", margin: "0 0 8px" }}>{discountMsg}</p>}
-                <button onClick={() => setScreen("history")} style={{ background: "white", color: "#4a00e0", border: "1px solid #e0d7ff", padding: "10px", fontSize: "14px", borderRadius: "8px", cursor: "pointer", width: "100%", marginBottom: "8px" }}>
+                <button onClick={() => { setScreen("history"); loadHistory(user.id) }} style={{ background: "white", color: "#4a00e0", border: "1px solid #e0d7ff", padding: "10px", fontSize: "14px", borderRadius: "8px", cursor: "pointer", width: "100%", marginBottom: "8px" }}>
                   📋 Generation History
                 </button>
                 <button onClick={handleLogout} style={{ background: "white", color: "#666", border: "1px solid #ddd", padding: "10px", fontSize: "14px", borderRadius: "8px", cursor: "pointer", width: "100%" }}>
