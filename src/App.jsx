@@ -889,6 +889,24 @@ useEffect(() => {
           <button onClick={() => setScreen("form")} style={{ background: "none", border: "none", color: "#4a00e0", fontSize: "16px", cursor: "pointer", marginBottom: "20px" }}>← Generate Another</button>
           <h2 style={{ color: "#4a00e0", marginBottom: "24px" }}>✨ Your Professional Listing is Ready!</h2>
 
+          {!loading && error && (
+            <div style={{ background: "#fff0f0", borderRadius: "16px", padding: "24px", marginBottom: "20px", textAlign: "center", border: "2px solid #ffcccc" }}>
+              <p style={{ fontSize: "24px", margin: "0 0 12px" }}>⚠️</p>
+              <p style={{ color: "#cc0000", fontWeight: "bold", marginBottom: "8px", fontSize: "16px" }}>Generation Failed</p>
+              <p style={{ color: "#666", fontSize: "14px", marginBottom: "20px", lineHeight: "1.6" }}>
+                {error.includes("queue_exceeded") || error.includes("high traffic")
+                  ? "The AI service is experiencing high traffic right now. Please wait 30 seconds and try again."
+                  : error.includes("timed out")
+                  ? "The request timed out. Please try again."
+                  : "Something went wrong. Please try again."}
+              </p>
+              <button onClick={() => { setError(""); setScreen("form") }}
+                style={{ background: "#4a00e0", color: "white", border: "none", padding: "14px 32px", borderRadius: "10px", cursor: "pointer", fontSize: "15px", fontWeight: "bold" }}>
+                ← Try Again
+              </button>
+            </div>
+          )}
+
           {!loading && !resultsUnlocked && (
             <div style={{ background: "white", borderRadius: "16px", padding: "32px", marginBottom: "20px", textAlign: "center", border: "2px solid #25D366" }}>
               <div style={{ fontSize: "48px", marginBottom: "12px" }}>📱</div>

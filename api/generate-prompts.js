@@ -16,22 +16,10 @@ export default async function handler(req, res) {
     const { brand, productName, category, material, platform } = req.body
     const CEREBRAS_KEY = process.env.CEREBRAS_KEY
 
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 40000)
-
-    let response
-    try {
-      response = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${CEREBRAS_KEY}`
-        },
-        body: JSON.stringify({
-          model: 'llama3.1-8b',
-          max_tokens: 1500,
-          messages: [
+    const cerebraBody = JSON.stringify({
+      model: 'llama3.1-8b',
+      max_tokens: 1500,
+      messages: [
             {
               role: 'system',
               content: 'You are a world class eCommerce product photographer with 15 years experience. You create UNIQUE detailed AI image generation prompts specific to each individual product. No two products ever get the same prompts. CRITICAL: All text in images must be in English only. All text must be perfectly legible. Image size must be 1080x1080 pixels.'
@@ -61,25 +49,47 @@ IMAGE_PROMPT_4:
 [Write a highly specific key benefits infographic for THIS exact product — ${productName} by ${brand}. Deep rich premium gradient background in colors complementary to ${category} — dark forest green for hair care, deep navy for skin care, rich burgundy for cosmetics, deep earth brown for Ayurvedic. Bold title "KEY BENEFITS" in large white elegant serif font at top. ${productName} bottle or package large and prominent on right side. Four key benefit cards on left side — each card is a white or light colored rounded rectangle with relevant icon and exactly this structure: Bold benefit headline in dark color, one line explanation below in smaller text. Benefits must be specific to ${productName} and its ingredients ${material}. Brand name ${brand} in gold or white elegant font at bottom. Premium brand aesthetic. Ultra sharp finish. 1080x1080 pixels. IMPORTANT: Render all text with perfect spelling exactly as written.]`
             }
           ]
+    })
+
+    const callCerebras = async () => {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 40000)
+      try {
+        const response = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+          method: 'POST',
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CEREBRAS_KEY}` },
+          body: cerebraBody
         })
-      })
-    } catch (fetchErr) {
-      clearTimeout(timeoutId)
-      return res.status(200).json({
-        success: false,
-        error: fetchErr.name === 'AbortError' ? 'Prompt generation timed out. Please retry.' : fetchErr.message
-      })
+        clearTimeout(timeoutId)
+        return await response.json()
+      } catch (err) {
+        clearTimeout(timeoutId)
+        if (err.name === 'AbortError') throw new Error('timeout')
+        throw err
+      }
     }
-    clearTimeout(timeoutId)
 
-    const data = await response.json()
-    console.log("Cerebras prompts status:", data.choices ? "success" : "error")
-
-    if (data.choices && data.choices[0]) {
-      return res.status(200).json({ success: true, content: data.choices[0].message.content })
-    } else {
-      return res.status(200).json({ success: false, error: JSON.stringify(data) })
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 5000 * attempt))
+      let data
+      try {
+        data = await callCerebras()
+      } catch (err) {
+        if (err.message === 'timeout') return res.status(200).json({ success: false, error: 'Prompt generation timed out. Please retry.' })
+        if (attempt < 2) continue
+        return res.status(200).json({ success: false, error: err.message })
+      }
+      if (data.choices && data.choices[0]) {
+        return res.status(200).json({ success: true, content: data.choices[0].message.content })
+      }
+      const isRateLimit = data.error && (data.error.code === 'queue_exceeded' || data.error.type === 'too_many_requests_error')
+      if (isRateLimit && attempt < 2) continue
+      return res.status(200).json({ success: false, error: isRateLimit ? 'AI service busy. Please retry.' : JSON.stringify(data) })
     }
+
+    return res.status(200).json({ success: false, error: 'AI service is busy. Please try again in 30 seconds.' })
+
   } catch (error) {
     return res.status(200).json({ success: false, error: error.message })
   }
