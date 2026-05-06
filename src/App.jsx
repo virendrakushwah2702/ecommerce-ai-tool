@@ -120,7 +120,7 @@ function App() {
         .select('id, brand, product_name, category, content, image_urls, created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(20)
+        .limit(50)
       if (error) {
         console.error('History load error:', error.message, error.code)
         return
@@ -501,6 +501,7 @@ useEffect(() => {
         })
         console.log("Generation save error free:", genError2)
       }
+      loadHistory(user.id)
       setLoading(false)
     } catch (err) {
       console.error("Generation error:", err)
@@ -984,7 +985,7 @@ useEffect(() => {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
                     {(DEMO_SETS[category] || DEMO_SETS["Hair Care"]).map((url, i) => (
                       <div key={i} style={{ position: "relative", borderRadius: "8px", overflow: "hidden", aspectRatio: "1/1" }}>
-                        <img src={url} alt="Demo" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "blur(8px)", transform: "scale(1.1)" }} />
+                        <img src={url} alt="Demo" referrerPolicy="no-referrer" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "blur(8px)", transform: "scale(1.1)" }} />
                         <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(74,0,224,0.3)" }}>
                           <div style={{ textAlign: "center" }}>
                             <p style={{ color: "white", fontSize: "24px", margin: "0" }}>🔒</p>
