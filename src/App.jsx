@@ -50,58 +50,58 @@ function App() {
 
   const DEMO_SETS = {
     "Hair Care": [
-      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1519699047748-de8e457a634e?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1571781926291-c477ebfd024b?w=400&h=400&fit=crop"
-    ],
-    "Skin Care": [
-      "https://images.unsplash.com/photo-1596755389378-c31d21fd1273?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1570194065650-d99fb4bedf0a?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1556228994-5e8885f9a4b5?w=400&h=400&fit=crop"
-    ],
-    "Food and Nutrition": [
-      "https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1505576399279-565b52d4ac71?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1559181567-c3190ca9be46?w=400&h=400&fit=crop"
-    ],
-    "Ayurvedic and Natural": [
-      "https://images.unsplash.com/photo-1515377905703-c4788e51af15?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1611073615830-9b592f193cac?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1608571423902-eed4a5ad8108?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1542736667-069246bdbc6d?w=400&h=400&fit=crop"
-    ],
-    "Cosmetics": [
-      "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1586495777744-4e6232bf2176?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1571875257727-256c39da42af?w=400&h=400&fit=crop"
+      "https://i.ibb.co/fd7b4Jhg/What-s-Inside-1.png",
+      "https://i.ibb.co/7tzfpkDy/How-To-Use-1.png",
+      "https://i.ibb.co/Y7NvMcbC/Key-Benefits.png",
+      "https://i.ibb.co/6R3y992g/Main-Product-Image.png"
     ],
     "Personal Care": [
-      "https://images.unsplash.com/photo-1526045612212-70caf35c14df?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1556228841-a3c527ebefe5?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=400&h=400&fit=crop"
+      "https://i.ibb.co/MDXQLj27/What-s-Inside-1.png",
+      "https://i.ibb.co/4ZtHrBqp/How-To-Use-1.png",
+      "https://i.ibb.co/nqCHcv3H/Key-Benefits.png",
+      "https://i.ibb.co/1YqdbPsr/Main-Product-Image.png"
     ],
-    "Home and Kitchen": [
-      "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1565183997392-2f6f122e5912?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1584568694244-14fbdf83bd30?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1556909172-54557c7e4fb7?w=400&h=400&fit=crop"
+    "Food and Nutrition": [
+      "https://i.ibb.co/mrDgcK2c/What-s-Inside-2.png",
+      "https://i.ibb.co/C34w76BS/How-To-Use-2.png",
+      "https://i.ibb.co/dzMCBGD/Key-Benefits-1.png",
+      "https://i.ibb.co/pvZw8vXS/Main-Product-Image-1.png"
     ],
-    "Clothing and Fashion": [
-      "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1558769132-cb1aea458c5e?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1485230895905-ec40ba36b9bc?w=400&h=400&fit=crop"
+    "Ayurvedic and Natural": [
+      "https://i.ibb.co/V0B1L8QQ/What-s-Inside-4.png",
+      "https://i.ibb.co/HL6HZ9h4/How-To-Use-4.png",
+      "https://i.ibb.co/7x84bxMz/Key-Benefits-3.png",
+      "https://i.ibb.co/6cWpjyYv/Main-Product-Image-3.png"
     ],
     "Home and Storage": [
-      "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1484101403633-562f891dc89a?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400&h=400&fit=crop",
-      "https://images.unsplash.com/photo-1493663284031-b7e3aefcae8e?w=400&h=400&fit=crop"
+      "https://i.ibb.co/qv0dtTg/What-s-Inside-3.png",
+      "https://i.ibb.co/twTkkN2M/How-To-Use-3.png",
+      "https://i.ibb.co/SFzvK9Q/Key-Benefits-2.png",
+      "https://i.ibb.co/xqzdDgJX/Main-Product-Image-2.png"
+    ],
+    "Skin Care": [
+      "https://i.ibb.co/MDXQLj27/What-s-Inside-1.png",
+      "https://i.ibb.co/4ZtHrBqp/How-To-Use-1.png",
+      "https://i.ibb.co/nqCHcv3H/Key-Benefits.png",
+      "https://i.ibb.co/1YqdbPsr/Main-Product-Image.png"
+    ],
+    "Cosmetics": [
+      "https://i.ibb.co/V0B1L8QQ/What-s-Inside-4.png",
+      "https://i.ibb.co/HL6HZ9h4/How-To-Use-4.png",
+      "https://i.ibb.co/7x84bxMz/Key-Benefits-3.png",
+      "https://i.ibb.co/6cWpjyYv/Main-Product-Image-3.png"
+    ],
+    "Home and Kitchen": [
+      "https://i.ibb.co/qv0dtTg/What-s-Inside-3.png",
+      "https://i.ibb.co/twTkkN2M/How-To-Use-3.png",
+      "https://i.ibb.co/SFzvK9Q/Key-Benefits-2.png",
+      "https://i.ibb.co/xqzdDgJX/Main-Product-Image-2.png"
+    ],
+    "Clothing and Fashion": [
+      "https://i.ibb.co/mrDgcK2c/What-s-Inside-2.png",
+      "https://i.ibb.co/C34w76BS/How-To-Use-2.png",
+      "https://i.ibb.co/dzMCBGD/Key-Benefits-1.png",
+      "https://i.ibb.co/pvZw8vXS/Main-Product-Image-1.png"
     ]
   }
   const [whatsappNumber, setWhatsappNumber] = useState("")
@@ -117,7 +117,7 @@ function App() {
     try {
       const { data, error } = await supabase
         .from('generations')
-        .select('id, brand, product_name, category, image_urls, created_at')
+        .select('id, brand, product_name, category, content, image_urls, created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(20)
@@ -134,6 +134,7 @@ function App() {
             brand: item.brand,
             productName: item.product_name,
             category: item.category,
+            content: item.content || '',
             images: imgs,
             date: new Date(item.created_at).toLocaleDateString('en-IN')
           }
@@ -460,7 +461,7 @@ useEffect(() => {
       setKeywords(extractKeywords(contentData.content))
 
       let images = []
-      if (credits >= 10 && promptsFetchPromise) {
+      if (credits >= 3 && promptsFetchPromise) {
         setLoadingMsg("Generating professional images...")
         const promptsRes = await promptsFetchPromise
         const promptsData = await promptsRes.json()
@@ -471,7 +472,7 @@ useEffect(() => {
           images = await generateImages(prompts, imgbbUrl)
           setGeneratedImages(images)
         }
-      } else if (credits < 10) {
+      } else {
         setLoadingMsg("Preparing your preview...")
         await new Promise(resolve => setTimeout(resolve, 1000))
       }
@@ -488,7 +489,7 @@ useEffect(() => {
           image_urls: successfulImages.map(img => ({ url: img.imageUrl, label: img.label }))
         })
         console.log("Generation save error:", genError)
-      } else if (credits < 10) {
+      } else {
         await deductCredits(user.id, 1)
         const { error: genError2 } = await supabase.from('generations').insert({
           user_id: user.id,
@@ -976,7 +977,7 @@ useEffect(() => {
                 </div>
               )}
 
-              {credits < 10 && (
+              {credits < 3 && (
                 <div style={{ background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px" }}>
                   <h3 style={{ color: "#4a00e0", marginBottom: "8px", fontSize: "18px" }}>🖼️ Your Professional Images Are Ready!</h3>
                   <p style={{ color: "#666", fontSize: "13px", marginBottom: "16px" }}>Upgrade to see your product transformed into stunning professional images!</p>
@@ -1000,7 +1001,7 @@ useEffect(() => {
                 </div>
               )}
 
-              {credits < 10 && (
+              {credits < 3 && (
                 <div style={{ background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px" }}>
                   <h3 style={{ color: "#4a00e0", marginBottom: "8px", fontSize: "18px" }}>✨ See What Our Tool Can Do!</h3>
                   <p style={{ color: "#666", fontSize: "13px", marginBottom: "16px" }}>Real before and after examples from our platform</p>
