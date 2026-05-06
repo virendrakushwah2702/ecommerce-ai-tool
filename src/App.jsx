@@ -465,13 +465,24 @@ useEffect(() => {
         setLoadingMsg("Generating professional images...")
         const promptsRes = await promptsFetchPromise
         const promptsData = await promptsRes.json()
-        const promptSource = promptsData.success ? promptsData.content : contentData.content
-        const prompts = extractPrompts(promptSource)
-        console.log("Prompts extracted:", prompts.length)
-        if (prompts.length > 0) {
-          images = await generateImages(prompts, imgbbUrl)
-          setGeneratedImages(images)
+        let prompts = promptsData.success ? extractPrompts(promptsData.content) : []
+
+        // Fallback: if Cerebras prompts failed or returned nothing, use default prompts
+        if (prompts.length === 0) {
+          const bg = platform === 'Meesho' || platform === 'Own Website'
+            ? 'soft premium colored background matching product aesthetic'
+            : 'pure white background RGB 255 255 255'
+          prompts = [
+            { label: "Main Product Image", prompt: `${bg}. ${productName} by ${brand} centered occupying 85% of frame. Professional studio lighting from top left. Subtle shadow. Photorealistic ultra HD. 1080x1080px. No text. No people.` },
+            { label: "What's Inside", prompt: `Ingredients infographic for ${productName} by ${brand}. ${category} aesthetic background. Bold title WHATS INSIDE at top. Product centered. Ingredient badges for: ${material}. Clean premium design. 1080x1080px.` },
+            { label: "How To Use", prompt: `How to use infographic for ${productName} by ${brand}. Matching background. Bold title HOW TO USE at top. Three numbered step cards specific to ${category}. Product small at bottom right. Clean minimal layout. 1080x1080px.` },
+            { label: "Key Benefits", prompt: `Key benefits infographic for ${productName} by ${brand}. Dark premium gradient background for ${category}. Bold title KEY BENEFITS in white at top. Product large on right. Four benefit cards on left with bold headline and one-line explanation each. Benefits specific to ${material}. Brand name in gold at bottom. 1080x1080px.` }
+          ]
         }
+
+        console.log("Prompts ready:", prompts.length)
+        images = await generateImages(prompts, imgbbUrl)
+        setGeneratedImages(images)
       } else {
         setLoadingMsg("Preparing your preview...")
         await new Promise(resolve => setTimeout(resolve, 1000))
