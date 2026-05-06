@@ -501,7 +501,18 @@ useEffect(() => {
         })
         console.log("Generation save error free:", genError2)
       }
-      loadHistory(user.id)
+
+      // Add to local history immediately — no DB fetch needed
+      const newHistoryItem = {
+        brand,
+        productName,
+        category,
+        content: extractContent(contentData.content),
+        images: successfulImages.map(img => ({ url: img.imageUrl, label: img.label })),
+        date: new Date().toLocaleDateString('en-IN')
+      }
+      setHistory(prev => [newHistoryItem, ...prev])
+
       setLoading(false)
     } catch (err) {
       console.error("Generation error:", err)
@@ -1102,7 +1113,7 @@ useEffect(() => {
                 </div>
               )}
 
-              {whatsappCaptured && credits >= 10 && generatedImages.filter(img => img.success).length > 0 && (
+              {whatsappCaptured && credits >= 3 && generatedImages.filter(img => img.success).length > 0 && (
                 <div style={{ background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px" }}>
                   <h3 style={{ color: "#4a00e0", marginBottom: "20px", fontSize: "18px" }}>🖼️ Your AI Generated Product Images</h3>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
@@ -1113,7 +1124,7 @@ useEffect(() => {
                         </div>
                         <div style={{ position: "relative", display: "inline-block", width: "100%" }}>
                           <img src={img.imageUrl} alt={img.label} style={{ width: "100%", borderRadius: "8px", border: "1px solid #e0d7ff" }} />
-                          {(!user || credits < 10) && (
+                          {(!user || credits < 3) && (
                             <div style={{
                               position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
                               display: "flex", alignItems: "center", justifyContent: "center",
@@ -1131,7 +1142,7 @@ useEffect(() => {
                             </div>
                           )}
                         </div>
-                        {user && credits > 6 ? (
+                        {user && credits >= 3 ? (
                           <a href={img.imageUrl} download={`${img.label}.png`}
                             style={{ display: "block", marginTop: "8px", color: "#4a00e0", fontSize: "12px" }}>
                             ⬇️ Download
