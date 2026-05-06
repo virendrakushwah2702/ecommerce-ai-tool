@@ -114,27 +114,44 @@ function App() {
 
   const loadHistory = async (userId) => {
     setHistoryLoading(true)
-    const { data } = await supabase
-      .from('generations')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(20)
-    if (data && data.length > 0) {
-      setHistory(data.map(item => ({
-        brand: item.brand,
-        productName: item.product_name,
-        category: item.category,
-        content: item.content,
-        images: item.image_urls || [],
-        date: new Date(item.created_at).toLocaleDateString('en-IN')
-      })))
-      const last = data[0]
-      setResult(last.content || '')
-      setGeneratedImages((last.image_urls || []).map(img => ({ ...img, imageUrl: img.url, success: true })))
-      setLastGeneration(last)
+    try {
+      const { data, error } = await supabase
+        .from('generations')
+        .select('id, brand, product_name, category, content, image_urls, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(20)
+      if (error) {
+        console.error('History load error:', error.message, error.code)
+        return
+      }
+      if (data && data.length > 0) {
+        setHistory(data.map(item => {
+          const imgs = Array.isArray(item.image_urls)
+            ? item.image_urls
+            : (item.image_urls ? (() => { try { return JSON.parse(item.image_urls) } catch { return [] } })() : [])
+          return {
+            brand: item.brand,
+            productName: item.product_name,
+            category: item.category,
+            content: item.content || '',
+            images: imgs,
+            date: new Date(item.created_at).toLocaleDateString('en-IN')
+          }
+        }))
+        const last = data[0]
+        const lastImgs = Array.isArray(last.image_urls)
+          ? last.image_urls
+          : (last.image_urls ? (() => { try { return JSON.parse(last.image_urls) } catch { return [] } })() : [])
+        setResult(last.content || '')
+        setGeneratedImages(lastImgs.map(img => ({ ...img, imageUrl: img.url, success: true })))
+        setLastGeneration(last)
+      }
+    } catch (err) {
+      console.error('History load exception:', err.message)
+    } finally {
+      setHistoryLoading(false)
     }
-    setHistoryLoading(false)
   }
 useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -428,29 +445,39 @@ useEffect(() => {
       const imgbbUrl = await uploadToImgBB(uploadedImage)
       console.log("ImgBB URL:", imgbbUrl)
 
-      setLoadingMsg("Writing listing content with AI...")
-      const contentRes = await fetch("/api/generate-content", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brand, productName, category, material, platform })
+      setLoadingMsg("Crafting your listing content and image prompts...")
+
+      const apiBody = JSON.stringify({ brand, productName, category, material, platform })
+      const apiHeaders = { "Content-Type": "application/json" }
+
+      // Launch both API calls in parallel — content and image prompts simultaneously
+      const contentFetchPromise = fetch("/api/generate-content", {
+        method: "POST", headers: apiHeaders, body: apiBody
       })
+      const promptsFetchPromise = credits >= 10
+        ? fetch("/api/generate-prompts", { method: "POST", headers: apiHeaders, body: apiBody })
+        : null
+
+      const contentRes = await contentFetchPromise
       const contentData = await contentRes.json()
       if (!contentData.success) throw new Error(contentData.error || "Content generation failed")
 
-      const content = contentData.content
-      setResult(extractContent(content))
-      setKeywords(extractKeywords(content))
+      setResult(extractContent(contentData.content))
+      setKeywords(extractKeywords(contentData.content))
 
       let images = []
-      if (credits >= 10) {
+      if (credits >= 10 && promptsFetchPromise) {
         setLoadingMsg("Generating professional images...")
-        const prompts = extractPrompts(content)
+        const promptsRes = await promptsFetchPromise
+        const promptsData = await promptsRes.json()
+        const promptSource = promptsData.success ? promptsData.content : contentData.content
+        const prompts = extractPrompts(promptSource)
         console.log("Prompts extracted:", prompts.length)
         if (prompts.length > 0) {
           images = await generateImages(prompts, imgbbUrl)
           setGeneratedImages(images)
         }
-      } else {
+      } else if (credits < 10) {
         setLoadingMsg("Preparing your preview...")
         await new Promise(resolve => setTimeout(resolve, 1000))
       }
