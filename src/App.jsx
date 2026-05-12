@@ -105,6 +105,7 @@ function App() {
     ]
   }
   const [communityJoined, setCommunityJoined] = useState(false)
+  const [paidGeneration, setPaidGeneration] = useState(false)
   const [countdownActive, setCountdownActive] = useState(false)
   const [countdownSeconds, setCountdownSeconds] = useState(3)
   const [countdownDone, setCountdownDone] = useState(false)
@@ -160,8 +161,12 @@ useEffect(() => {
       }
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) { loadCredits(session.user.id) }
+      if (session?.user) {
+        setUser(prev => ({ ...prev, ...session.user }))
+        loadCredits(session.user.id)
+      } else {
+        setUser(null)
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -508,6 +513,7 @@ useEffect(() => {
     
 
     setLoading(true)
+    setPaidGeneration(!!user?.is_paid)
     setGeneratedImages([])
     setResult("")
     setResultsUnlocked(false)
@@ -1103,7 +1109,7 @@ useEffect(() => {
                 </div>
               )}
             </div>
-          ) : !(resultsUnlocked || user?.is_paid || communityJoined) ? (
+          ) : !(resultsUnlocked || paidGeneration || communityJoined) ? (
             /* ── COMMUNITY GATE — new free users only ── */
             (
               /* CHANGE 3: New free user — full community gate */
