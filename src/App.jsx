@@ -156,13 +156,7 @@ useEffect(() => {
       setUser(session?.user ?? null)
       if (session?.user) {
         loadCredits(session.user.id)
-        // If already on auth screen and session exists, redirect appropriately
-        const key = `phone_captured_${session.user.id}`
-        if (!localStorage.getItem(key)) {
-          setScreen("phone-capture")
-        } else {
-          setScreen("home")
-        }
+        setScreen("home")
       }
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
