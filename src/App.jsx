@@ -1319,7 +1319,7 @@ useEffect(() => {
                 </div>
               )}
 
-              {(resultsUnlocked || user?.is_paid || communityJoined) && generatedImages.filter(img => img.success).length > 0 && (
+              {generatedImages.filter(img => img.success).length > 0 && (
                 <div style={{ background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px" }}>
                   <h3 style={{ color: "#4a00e0", marginBottom: "20px", fontSize: "18px" }}>🖼️ Your AI Generated Product Images</h3>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
