@@ -104,23 +104,26 @@ function App() {
       "https://i.ibb.co/pvZw8vXS/Main-Product-Image-1.png"
     ]
   }
-  const [whatsappNumber, setWhatsappNumber] = useState("")
-  const [whatsappCaptured, setWhatsappCaptured] = useState(false)
+  const [communityJoined, setCommunityJoined] = useState(false)
+  const [countdownActive, setCountdownActive] = useState(false)
+  const [countdownSeconds, setCountdownSeconds] = useState(3)
+  const [countdownDone, setCountdownDone] = useState(false)
+  const [proCardDismissed, setProCardDismissed] = useState(false)
   const [resultsUnlocked, setResultsUnlocked] = useState(false)
-  const [whatsappError, setWhatsappError] = useState("")
   const [discountKey, setDiscountKey] = useState("")
   const [discountMsg, setDiscountMsg] = useState("")
   const [discountLoading, setDiscountLoading] = useState(false)
+  const [capturePhoneValue, setCapturePhoneValue] = useState("")
 
   const loadHistory = async (userId) => {
     setHistoryLoading(true)
     try {
       const { data, error } = await supabase
         .from('generations')
-        .select('id, brand, product_name, category, content, image_urls, created_at')
+        .select('id, brand, product_name, category, image_urls, content, created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(10)
       if (error) {
         console.error('History load error:', error.message, error.code)
         return
@@ -136,7 +139,7 @@ function App() {
             category: item.category,
             content: item.content || '',
             images: imgs,
-            date: new Date(item.created_at).toLocaleDateString('en-IN')
+            date: new Date(item.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
           }
         }))
       } else {
@@ -151,7 +154,16 @@ function App() {
 useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) { loadCredits(session.user.id) }
+      if (session?.user) {
+        loadCredits(session.user.id)
+        // If already on auth screen and session exists, redirect appropriately
+        const key = `phone_captured_${session.user.id}`
+        if (!localStorage.getItem(key)) {
+          setScreen("phone-capture")
+        } else {
+          setScreen("home")
+        }
+      }
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
@@ -162,10 +174,90 @@ useEffect(() => {
 
    
   const loadCredits = async (userId) => {
-    const { data } = await supabase.from('users').select('credits, plan').eq('id', userId).single()
+    const { data } = await supabase.from('users').select('credits, plan, is_paid, community_joined').eq('id', userId).single()
     if (data) {
       setCredits(data.credits)
-      setUser(prev => ({ ...prev, plan: data.plan }))
+      setUser(prev => ({ ...prev, plan: data.plan, is_paid: data.is_paid }))
+      setCommunityJoined(data.community_joined || false)
+    }
+  }
+
+  // Countdown effect for community gate
+  useEffect(() => {
+    if (!countdownActive) return
+    if (countdownSeconds <= 0) {
+      setCountdownDone(true)
+      setCountdownActive(false)
+      return
+    }
+    const t = setTimeout(() => setCountdownSeconds(s => s - 1), 1000)
+    return () => clearTimeout(t)
+  }, [countdownActive, countdownSeconds])
+
+  const joinCommunity = async () => {
+    if (user?.id) {
+      await supabase.from('users').update({ community_joined: true }).eq('id', user.id)
+      setCommunityJoined(true)
+    }
+    setResultsUnlocked(true)
+  }
+
+  const handleRazorpayPayment = async (planKey) => {
+    const plans = {
+      pro: { name: "Pro Plan", price: 109900, credits: 100 },
+      agency: { name: "Agency Plan", price: 499900, credits: 200 }
+    }
+    const plan = plans[planKey]
+    if (!plan) return
+    try {
+      const res = await fetch("/api/razorpay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create-order", planKey, amount: plan.price, email: user?.email })
+      })
+      const order = await res.json()
+      if (!order.id) { alert("Could not create order. Please try again."); return }
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+        amount: order.amount,
+        currency: "INR",
+        name: "Imagined AI",
+        description: plan.name,
+        order_id: order.id,
+        handler: async (response) => {
+          try {
+            const verifyRes = await fetch("/api/razorpay", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "verify",
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                email: user?.email,
+                planKey,
+                credits: plan.credits
+              })
+            })
+            const verifyData = await verifyRes.json()
+            if (verifyData.success) {
+              alert(`✅ Payment successful! ${plan.credits} credits added to your account.`)
+              if (user?.id) loadCredits(user.id)
+            } else {
+              alert("Payment verification failed. Please contact support.")
+            }
+          } catch(e) {
+            console.log("Verify error:", e)
+          }
+        },
+        prefill: { email: user?.email || "" },
+        theme: { color: "#4a00e0" }
+      }
+      const rzp = new window.Razorpay(options)
+      rzp.open()
+    } catch(e) {
+      console.log("Razorpay error:", e)
+      alert("Payment failed. Please try again.")
     }
   }
 
@@ -182,6 +274,15 @@ useEffect(() => {
     setAuthLoading(false)
   }
 
+  const goHomeAfterAuth = (userId) => {
+    const key = `phone_captured_${userId}`
+    if (!localStorage.getItem(key)) {
+      setScreen("phone-capture")
+    } else {
+      setScreen("home")
+    }
+  }
+
   const handleLogin = async () => {
     setAuthLoading(true)
     setAuthError("")
@@ -189,11 +290,7 @@ useEffect(() => {
     if (error) {
       setAuthError(error.message)
     } else {
-      if (!whatsappCaptured && !whatsappNumber) {
-        setScreen("whatsapp")
-      } else {
-        setScreen("home")
-      }
+      goHomeAfterAuth(data.user.id)
     }
     setAuthLoading(false)
   }
@@ -240,33 +337,9 @@ useEffect(() => {
     setDiscountLoading(false)
   }
 
-  const handleWhatsAppCapture = async () => {
-    if (!whatsappNumber || whatsappNumber.length < 10) {
-      setWhatsappError("Please enter a valid 10 digit WhatsApp number")
-      return
-    }
-    setWhatsappError("")
-    try {
-      await fetch('/api/save-lead', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          whatsapp_number: whatsappNumber,
-          email: user?.email || '',
-          product_name: productName,
-          category: category
-        })
-      })
-      setWhatsappCaptured(true)
-    } catch (err) {
-      console.error("WhatsApp capture error:", err)
-      setWhatsappCaptured(true)
-    }
-  }
-
   const handlePayment = async (planKey, planName, amount) => {
     if (!user) {
-      setScreen("whatsapp")
+      setScreen("auth")
       return
     }
     try {
@@ -342,6 +415,24 @@ useEffect(() => {
     return data.url
   }
 
+  // Converts a base64 data URL to a blob and uploads to ImgBB — used for background history save
+  const uploadBase64ToImgBB = async (dataUrl) => {
+    try {
+      const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '')
+      const binary = atob(base64)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      const blob = new Blob([bytes], { type: 'image/png' })
+      const res = await fetch('/api/upload-image', {
+        method: 'POST',
+        body: blob,
+        headers: { 'X-File-Type': 'image/png' }
+      })
+      const data = await res.json()
+      return data.success ? data.url : null
+    } catch { return null }
+  }
+
   const extractPrompts = (text) => {
     const prompts = []
     const labels = ["Main Product Image", "What's Inside", "How To Use", "Key Benefits"]
@@ -363,12 +454,24 @@ useEffect(() => {
   }
 
   const extractContent = (text) => {
-    const contentStart = text.indexOf("LISTING_CONTENT:")
-    if (contentStart !== -1) {
-      return text.substring(contentStart + 16).trim()
+    const markers = ["LISTING_CONTENT:", "listing_content:", "LISTING CONTENT:"]
+    for (const marker of markers) {
+      const contentStart = text.indexOf(marker)
+      if (contentStart !== -1) {
+        return text.substring(contentStart + marker.length).trim()
+          .replace(/\*\*/g, "").replace(/\*/g, "")
+          .replace(/#{1,6}\s/g, "").replace(/---/g, "")
+      }
+    }
+    const imageEnd = text.indexOf("IMAGE_PROMPT_4:")
+    if (imageEnd !== -1) {
+      const afterImage = text.indexOf("\n", imageEnd + 50)
+      return text.substring(afterImage).trim()
         .replace(/\*\*/g, "").replace(/\*/g, "")
+        .replace(/#{1,6}\s/g, "").replace(/---/g, "")
     }
     return text.replace(/\*\*/g, "").replace(/\*/g, "")
+      .replace(/#{1,6}\s/g, "").replace(/---/g, "")
   }
 
   const extractKeywords = (text) => {
@@ -390,25 +493,6 @@ useEffect(() => {
       })
   }
 
-  const generateImages = async (prompts, imageUrl) => {
-    const promises = prompts.map(async ({ prompt, label }) => {
-      try {
-        console.log("Generating image for:", label)
-        const res = await fetch("/api/generate-images", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imageUrl, prompt, label })
-        })
-        const data = await res.json()
-        console.log("Image gen result:", label, data.success)
-        return { ...data, label }
-      } catch (err) {
-        console.error("Image gen error:", err)
-        return { success: false, error: err.message, label }
-      }
-    })
-    return Promise.all(promises)
-  }
 
   const handleGenerate = async () => {
     if (!brand || !productName || !material || !uploadedImage || !disclaimer) {
@@ -418,7 +502,7 @@ useEffect(() => {
     setError("")
 
     if (!user) {
-      setScreen("whatsapp")
+      setScreen("auth")
       return
     }
 
@@ -433,6 +517,10 @@ useEffect(() => {
     setGeneratedImages([])
     setResult("")
     setResultsUnlocked(false)
+    setCountdownActive(false)
+    setCountdownSeconds(3)
+    setCountdownDone(false)
+    setProCardDismissed(false)
     setScreen("result")
 
     try {
@@ -440,91 +528,116 @@ useEffect(() => {
       const imgbbUrl = await uploadToImgBB(uploadedImage)
       console.log("ImgBB URL:", imgbbUrl)
 
-      setLoadingMsg("Crafting your listing content and image prompts...")
+      setLoadingMsg("Generating your listing content...")
 
-      const apiBody = JSON.stringify({ brand, productName, category, material, platform })
+      const apiBody = JSON.stringify({ brand, productName, category, material, platform, is_paid: !!user?.is_paid })
       const apiHeaders = { "Content-Type": "application/json" }
 
-      // Launch both API calls in parallel — content and image prompts simultaneously
-      const contentFetchPromise = fetch("/api/generate-content", {
+      const bg = platform === 'Meesho' || platform === 'Own Website'
+        ? 'soft premium colored background matching product aesthetic'
+        : 'pure white background RGB 255 255 255'
+      const defaultPrompts = [
+        { label: "Main Product Image", prompt: `${bg}. ${productName} by ${brand} centered occupying 85% of frame. Professional studio lighting from top left. Subtle shadow. Photorealistic ultra HD. 1080x1080px. No text. No people.` },
+        { label: "What's Inside", prompt: `Ingredients infographic for ${productName} by ${brand}. ${category} aesthetic background. Bold title WHATS INSIDE at top. Product centered. Ingredient badges for: ${material}. Clean premium design. 1080x1080px.` },
+        { label: "How To Use", prompt: `How to use infographic for ${productName} by ${brand}. Matching background. Bold title HOW TO USE at top. Three numbered step cards specific to ${category}. Product small at bottom right. Clean minimal layout. 1080x1080px.` },
+        { label: "Key Benefits", prompt: `Key benefits infographic for ${productName} by ${brand}. Dark premium gradient background for ${category}. Bold title KEY BENEFITS in white at top. Product large on right. Four benefit cards on left with bold headline and one-line explanation each. Benefits specific to ${material}. Brand name in gold at bottom. 1080x1080px.` }
+      ]
+
+      // Step 1: Submit image jobs to fal.ai queue AND start content generation — both in parallel
+      // Image submission is fast (< 3s), content takes ~35s
+      const contentPromise = fetch("/api/generate-content", {
         method: "POST", headers: apiHeaders, body: apiBody
-      })
-      const promptsFetchPromise = credits >= 10
-        ? fetch("/api/generate-prompts", { method: "POST", headers: apiHeaders, body: apiBody })
-        : null
+      }).then(r => r.json())
 
-      const contentRes = await contentFetchPromise
-      const contentData = await contentRes.json()
-      if (!contentData.success) throw new Error(contentData.error || "Content generation failed")
+      const jobsPromise = user?.is_paid
+        ? Promise.all(defaultPrompts.map(async ({ prompt, label }) => {
+            try {
+              const res = await fetch("/api/generate-images", {
+                method: "POST", headers: apiHeaders,
+                body: JSON.stringify({ imageUrl: imgbbUrl, prompt, label })
+              })
+              const data = await res.json()
+              console.log("Queue submit:", label, data.request_id)
+              return { label, status_url: data.status_url, response_url: data.response_url, submitted: !!(data.status_url) }
+            } catch (err) {
+              return { label, submitted: false }
+            }
+          }))
+        : Promise.resolve([])
 
-      setResult(extractContent(contentData.content))
-      setKeywords(extractKeywords(contentData.content))
+      // Step 2: Wait for content + job submissions (both fast, ~35s total)
+      setLoadingMsg("Crafting listing content and queuing images...")
+      const [contentData, jobs] = await Promise.all([contentPromise, jobsPromise])
 
-      let images = []
-      if (credits >= 3 && promptsFetchPromise) {
-        setLoadingMsg("Generating professional images...")
-        const promptsRes = await promptsFetchPromise
-        const promptsData = await promptsRes.json()
-        let prompts = promptsData.success ? extractPrompts(promptsData.content) : []
+      if (!contentData.success || !contentData.content) {
+        throw new Error(contentData.error || "Content generation failed")
+      }
 
-        // Fallback: if Cerebras prompts failed or returned nothing, use default prompts
-        if (prompts.length === 0) {
-          const bg = platform === 'Meesho' || platform === 'Own Website'
-            ? 'soft premium colored background matching product aesthetic'
-            : 'pure white background RGB 255 255 255'
-          prompts = [
-            { label: "Main Product Image", prompt: `${bg}. ${productName} by ${brand} centered occupying 85% of frame. Professional studio lighting from top left. Subtle shadow. Photorealistic ultra HD. 1080x1080px. No text. No people.` },
-            { label: "What's Inside", prompt: `Ingredients infographic for ${productName} by ${brand}. ${category} aesthetic background. Bold title WHATS INSIDE at top. Product centered. Ingredient badges for: ${material}. Clean premium design. 1080x1080px.` },
-            { label: "How To Use", prompt: `How to use infographic for ${productName} by ${brand}. Matching background. Bold title HOW TO USE at top. Three numbered step cards specific to ${category}. Product small at bottom right. Clean minimal layout. 1080x1080px.` },
-            { label: "Key Benefits", prompt: `Key benefits infographic for ${productName} by ${brand}. Dark premium gradient background for ${category}. Bold title KEY BENEFITS in white at top. Product large on right. Four benefit cards on left with bold headline and one-line explanation each. Benefits specific to ${material}. Brand name in gold at bottom. 1080x1080px.` }
-          ]
+      // Step 3: Show content to user RIGHT NOW — don't wait for images
+      const fullContent = contentData.content
+      const listingContent = extractContent(fullContent)
+      setResult(listingContent)
+      setKeywords(extractKeywords(fullContent))
+      await deductCredits(user.id, 1)
+
+      // Save generation record with content immediately (images added later)
+      const { data: genRow } = await supabase.from('generations').insert({
+        user_id: user.id, brand, product_name: productName, category,
+        content: listingContent,
+        image_urls: []
+      }).select('id').single()
+
+      setLoading(false)  // USER SEES RESULTS NOW at ~35s
+
+      // Step 4: Poll images in background — they appear one by one as fal.ai completes them
+      ;(async () => {
+        try {
+          const pending = jobs.filter(j => j.submitted)
+          if (pending.length === 0) return
+
+          const imageResults = {}
+          const deadline = Date.now() + 150000  // 2.5 min max for slowest fal.ai jobs
+
+          while (Object.keys(imageResults).length < pending.length && Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 3000))
+            await Promise.all(
+              pending.filter(j => !imageResults[j.label]).map(async (job) => {
+                try {
+                  const res = await fetch(`/api/check-image?status_url=${encodeURIComponent(job.status_url)}&response_url=${encodeURIComponent(job.response_url)}`)
+                  const data = await res.json()
+                  if (data.done) {
+                    imageResults[job.label] = { ...data, label: job.label }
+                    if (data.success) {
+                      setGeneratedImages(prev => [...prev.filter(i => i.label !== job.label), { ...data, label: job.label }])
+                    }
+                    console.log("Image ready:", job.label, data.success)
+                  }
+                } catch (err) {
+                  console.error("Poll error:", job.label, err.message)
+                }
+              })
+            )
+          }
+
+          // All images done — deduct remaining credits and update Supabase row
+          const successful = Object.values(imageResults).filter(r => r.success)
+          if (successful.length > 0) {
+            await deductCredits(user.id, 2)
+          }
+
+          // Upload to ImgBB and update the generation row with image URLs
+          const uploadResults = await Promise.all(
+            successful.map(img => uploadBase64ToImgBB(img.imageUrl).then(url => url ? { url, label: img.label } : null))
+          )
+          const imgbbImages = uploadResults.filter(Boolean)
+          if (genRow?.id) {
+            await supabase.from('generations').update({ image_urls: imgbbImages }).eq('id', genRow.id)
+          }
+          await loadHistory(user.id)
+        } catch (e) {
+          console.error('Background image poll failed:', e.message)
         }
-
-        console.log("Prompts ready:", prompts.length)
-        images = await generateImages(prompts, imgbbUrl)
-        setGeneratedImages(images)
-      } else {
-        setLoadingMsg("Preparing your preview...")
-        await new Promise(resolve => setTimeout(resolve, 1000))
-      }
-
-      const successfulImages = images.filter(img => img && img.success)
-      if (successfulImages.length > 0) {
-        await deductCredits(user.id, 3)
-        const { error: genError } = await supabase.from('generations').insert({
-          user_id: user.id,
-          brand,
-          product_name: productName,
-          category,
-          content: extractContent(contentData.content).substring(0, 5000),
-          image_urls: successfulImages.map(img => ({ url: img.imageUrl, label: img.label }))
-        })
-        console.log("Generation save error:", genError)
-      } else {
-        await deductCredits(user.id, 1)
-        const { error: genError2 } = await supabase.from('generations').insert({
-          user_id: user.id,
-          brand,
-          product_name: productName,
-          category,
-          content: extractContent(contentData.content).substring(0, 5000),
-          image_urls: []
-        })
-        console.log("Generation save error free:", genError2)
-      }
-
-      // Add to local history immediately — no DB fetch needed
-      const newHistoryItem = {
-        brand,
-        productName,
-        category,
-        content: extractContent(contentData.content),
-        images: successfulImages.map(img => ({ url: img.imageUrl, label: img.label })),
-        date: new Date().toLocaleDateString('en-IN')
-      }
-      setHistory(prev => [newHistoryItem, ...prev])
-
-      setLoading(false)
+      })()
     } catch (err) {
       console.error("Generation error:", err)
       setError(err.message)
@@ -572,14 +685,24 @@ useEffect(() => {
                     <p style={{ color: "#666", fontSize: "13px", margin: "0" }}>{item.brand} • {item.category} • {item.date}</p>
                   </div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
-                  {(item.images || []).map((img, j) => (
-                    <div key={j}>
-                      <p style={{ fontSize: "11px", color: "#666", margin: "0 0 4px" }}>{img.label}</p>
-                      <img src={img.url || img.imageUrl} alt={img.label} style={{ width: "100%", borderRadius: "8px" }} />
-                    </div>
-                  ))}
-                </div>
+
+                {user?.is_paid && (item.images || []).length > 0 && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+                    {(item.images || []).map((img, j) => (
+                      <div key={j}>
+                        <p style={{ fontSize: "11px", color: "#666", margin: "0 0 4px" }}>{img.label}</p>
+                        <img src={img.url || img.imageUrl} alt={img.label} style={{ width: "100%", borderRadius: "8px" }} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!user?.is_paid && (
+                  <div style={{ background: "#f0ebff", borderRadius: "10px", padding: "12px", marginBottom: "12px", textAlign: "center" }}>
+                    <p style={{ color: "#4a00e0", fontSize: "13px", margin: "0" }}>🔒 Upgrade to a paid plan to view generated images</p>
+                  </div>
+                )}
+
                 {item.content && (
                   <div style={{ background: "#f8f4ff", borderRadius: "12px", padding: "16px", marginBottom: "12px", maxHeight: "200px", overflowY: "auto" }}>
                     <p style={{ fontSize: "13px", color: "#333", lineHeight: "1.8", whiteSpace: "pre-wrap", margin: "0" }}>
@@ -603,7 +726,7 @@ useEffect(() => {
           <h2 style={{ color: "#4a00e0", marginBottom: "24px" }}>Privacy Policy</h2>
           <div style={{ background: "white", borderRadius: "16px", padding: "32px", lineHeight: "1.9", color: "#333", fontSize: "15px" }}>
             <p><strong>Last updated: April 2026</strong></p>
-            <p>EcomImagined AI ("we", "us", "our") operates imaginedai.in. This page informs you of our policies regarding the collection, use, and disclosure of personal data.</p>
+            <p>Imagined AI ("we", "us", "our") operates imaginedai.in. This page informs you of our policies regarding the collection, use, and disclosure of personal data.</p>
             <h3 style={{ color: "#4a00e0" }}>Information We Collect</h3>
             <p>We collect email address, WhatsApp number, product information you provide, and usage data. We use this to provide and improve our service.</p>
             <h3 style={{ color: "#4a00e0" }}>How We Use Your Data</h3>
@@ -624,9 +747,9 @@ useEffect(() => {
           <h2 style={{ color: "#4a00e0", marginBottom: "24px" }}>Terms and Conditions</h2>
           <div style={{ background: "white", borderRadius: "16px", padding: "32px", lineHeight: "1.9", color: "#333", fontSize: "15px" }}>
             <p><strong>Last updated: April 2026</strong></p>
-            <p>By using EcomImagined AI at imaginedai.in you agree to these terms.</p>
+            <p>By using Imagined AI at imaginedai.in you agree to these terms.</p>
             <h3 style={{ color: "#4a00e0" }}>Service Description</h3>
-            <p>EcomImagined AI provides AI generated product images and Amazon listing content for eCommerce sellers. Results are AI generated and should be reviewed before use.</p>
+            <p>Imagined AI provides AI generated product images and Amazon listing content for eCommerce sellers. Results are AI generated and should be reviewed before use.</p>
             <h3 style={{ color: "#4a00e0" }}>Credits and Payments</h3>
             <p>Credits are non-refundable once used. Unused credits do not expire. Each generation costs 3 credits. Payments are processed securely via Instamojo.</p>
             <h3 style={{ color: "#4a00e0" }}>User Responsibilities</h3>
@@ -675,7 +798,7 @@ useEffect(() => {
                 <h3 style={{ color: plan.popular ? "white" : "#333", marginBottom: "8px" }}>{plan.name}</h3>
                 <p style={{ color: plan.popular ? "#e0d7ff" : "#666", fontSize: "13px", marginBottom: "12px" }}>{plan.credits} credits • {plan.generations}</p>
                 <p style={{ color: plan.popular ? "white" : "#4a00e0", fontSize: "28px", fontWeight: "bold", margin: "0 0 16px" }}>{plan.price}</p>
-                <button onClick={() => handlePayment(plan.key, plan.name, parseInt(plan.price.replace('₹','').replace(',','')))}
+                <button onClick={() => (plan.key === 'pro' || plan.key === 'agency') ? handleRazorpayPayment(plan.key) : handlePayment(plan.key, plan.name, parseInt(plan.price.replace('₹','').replace(',','')))}
                   style={{ background: plan.popular ? "white" : "#4a00e0", color: plan.popular ? "#4a00e0" : "white", border: "none", padding: "12px", borderRadius: "8px", cursor: "pointer", width: "100%", fontSize: "15px", fontWeight: "bold" }}>
                   Buy Now
                 </button>
@@ -691,6 +814,53 @@ useEffect(() => {
             style={{ background: "#4a00e0", color: "white", border: "none", padding: "12px 40px", borderRadius: "8px", cursor: "pointer", fontSize: "15px", fontWeight: "bold" }}>
               Subscribe Now
             </button>
+          </div>
+        </div>
+      )}
+
+      {screen === "phone-capture" && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "20px" }}>
+          <div style={{ background: "white", borderRadius: "20px", padding: "40px", maxWidth: "440px", width: "100%", textAlign: "center" }}>
+            <div style={{ fontSize: "48px", marginBottom: "16px" }}>📱</div>
+            <h2 style={{ color: "#4a00e0", marginBottom: "8px", fontSize: "22px" }}>One Last Step!</h2>
+            <p style={{ color: "#666", fontSize: "14px", lineHeight: "1.7", marginBottom: "24px" }}>
+              Save your WhatsApp number so we can send you listing updates, trending keywords and seller tips directly on WhatsApp.
+            </p>
+            <input
+              type="tel"
+              placeholder="Your WhatsApp number (e.g. 9876543210)"
+              value={capturePhoneValue}
+              onChange={e => setCapturePhoneValue(e.target.value)}
+              style={{ width: "100%", padding: "14px", fontSize: "15px", border: "1.5px solid #e0d7ff", borderRadius: "8px", boxSizing: "border-box", marginBottom: "16px", fontFamily: "Arial", textAlign: "center" }}
+            />
+            <button
+              onClick={async () => {
+                const digits = capturePhoneValue.replace(/\D/g, "")
+                if (digits.length >= 10) {
+                  const stripped = digits.replace(/^(91|0)/, "")
+                  const fullPhone = `91${stripped}`
+                  try {
+                    await supabase.from("whatsapp_leads").insert({
+                      whatsapp_number: fullPhone,
+                      email: user?.email || "",
+                      product_name: "signup",
+                      category: "lead"
+                    })
+                  } catch(e) { console.log("Phone save error:", e) }
+                }
+                localStorage.setItem(`phone_captured_${user?.id}`, "true")
+                setScreen("home")
+              }}
+              disabled={capturePhoneValue.replace(/\D/g, "").length < 10}
+              style={{ width: "100%", background: capturePhoneValue.replace(/\D/g, "").length < 10 ? "#c4b5fd" : "#4a00e0", color: "white", border: "none", padding: "14px", fontSize: "15px", borderRadius: "8px", cursor: capturePhoneValue.replace(/\D/g, "").length < 10 ? "not-allowed" : "pointer", fontWeight: "bold", marginBottom: "12px" }}
+            >
+              Save & Continue →
+            </button>
+            <p style={{ color: "#bbb", fontSize: "11px", marginTop: "16px", lineHeight: "1.6" }}>
+              By saving your number you agree to the{" "}
+              <a href="https://www.imaginedai.in/terms" target="_blank" rel="noreferrer" style={{ color: "#bbb" }}>Terms & Conditions</a>{" "}
+              of ImaginedAI.in. We will never share your number with third parties.
+            </p>
           </div>
         </div>
       )}
@@ -732,7 +902,7 @@ useEffect(() => {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "20px" }}>
           <div style={{ background: "white", borderRadius: "20px", padding: "48px 40px", maxWidth: "540px", width: "100%", textAlign: "center" }}>
             <div style={{ fontSize: "56px", marginBottom: "16px" }}>🛍️</div>
-            <h1 style={{ fontSize: "32px", color: "#4a00e0", marginBottom: "12px" }}>EcomImagined AI</h1>
+            <h1 style={{ fontSize: "32px", color: "#4a00e0", marginBottom: "12px" }}>Imagined AI</h1>
             <p style={{ color: "#666", fontSize: "16px", lineHeight: "1.6", marginBottom: "24px" }}>
               Upload your product photo — get 4 professional images and complete marketplace listing content in minutes
             </p>
@@ -754,6 +924,20 @@ useEffect(() => {
                 <button onClick={() => setScreen("form")} style={{ background: "#4a00e0", color: "white", border: "none", padding: "16px", fontSize: "17px", borderRadius: "10px", cursor: "pointer", width: "100%", marginBottom: "12px" }}>
                   ✨ Generate Product Listing →
                 </button>
+                {/* CHANGE 6: Pro community welcome card for paid users */}
+                {user?.is_paid && (
+                  <div style={{ background: "#fff9e6", borderRadius: "12px", padding: "14px 16px", marginBottom: "12px", border: "1.5px solid #ffd700", textAlign: "left" }}>
+                    <p style={{ color: "#333", fontWeight: "bold", fontSize: "13px", margin: "0 0 6px" }}>🏆 Join your exclusive Pro Sellers Community:</p>
+                    <a
+                      href="https://chat.whatsapp.com/DvKMi8ntT2JIYv8NUnz3Mo"
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "#25D366", fontSize: "14px", fontWeight: "bold", textDecoration: "none" }}
+                    >
+                      Join Pro Community →
+                    </a>
+                  </div>
+                )}
                 <button onClick={() => { setPrevScreen("home"); setScreen("pricing") }} style={{ background: "white", color: "#4a00e0", border: "2px solid #4a00e0", padding: "10px", fontSize: "14px", borderRadius: "8px", cursor: "pointer", width: "100%", marginBottom: "8px" }}>
                   💎 Buy More Credits
                 </button>
@@ -847,7 +1031,7 @@ useEffect(() => {
             <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
               <input type="checkbox" id="disclaimer" checked={disclaimer} onChange={e => setDisclaimer(e.target.checked)} style={{ marginTop: "3px", width: "18px", height: "18px", cursor: "pointer", flexShrink: 0 }} />
               <label htmlFor="disclaimer" style={{ fontSize: "13px", color: "#555", lineHeight: "1.7", cursor: "pointer" }}>
-                I confirm that the product image belongs to my product and I have full rights to use it. EcomImagined AI is not responsible for any intellectual property disputes or listing rejections.
+                I confirm that the product image belongs to my product and I have full rights to use it. Imagined AI is not responsible for any intellectual property disputes or listing rejections.
               </label>
             </div>
           </div>
@@ -860,51 +1044,6 @@ useEffect(() => {
         </div>
       )}
 
-      {screen === "whatsapp" && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "20px" }}>
-          <div style={{ background: "white", borderRadius: "20px", padding: "40px", maxWidth: "440px", width: "100%", textAlign: "center" }}>
-            <div style={{ fontSize: "56px", marginBottom: "16px" }}>📱</div>
-            <h2 style={{ color: "#4a00e0", marginBottom: "8px" }}>Get Results On WhatsApp!</h2>
-            <p style={{ color: "#666", fontSize: "15px", lineHeight: "1.6", marginBottom: "24px" }}>
-              Enter your WhatsApp number to receive your AI generated listing content and demo images instantly!
-            </p>
-            <div style={{ background: "#f0f7ff", borderRadius: "12px", padding: "16px", marginBottom: "24px" }}>
-              <p style={{ color: "#0066cc", fontSize: "13px", margin: "0" }}>
-                ✅ Free listing content delivered to WhatsApp<br/>
-                ✅ Demo product images included<br/>
-                ✅ Top keywords for your category<br/>
-                ✅ No spam — only your results
-              </p>
-            </div>
-            <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
-              <div style={{ background: "#f0f0f0", borderRadius: "8px", padding: "12px", fontSize: "15px", fontWeight: "bold", color: "#333" }}>+91</div>
-              <input
-                style={{ flex: 1, padding: "12px", fontSize: "15px", border: "1.5px solid #e0d7ff", borderRadius: "8px", fontFamily: "Arial" }}
-                type="tel"
-                placeholder="WhatsApp number"
-                maxLength="10"
-                value={whatsappNumber}
-                onChange={e => setWhatsappNumber(e.target.value.replace(/\D/g, ''))}
-              />
-            </div>
-            {whatsappError && <p style={{ color: "red", fontSize: "13px", marginBottom: "12px" }}>{whatsappError}</p>}
-            <button
-              onClick={async () => {
-                await handleWhatsAppCapture()
-                setWhatsappCaptured(true)
-                if (!user) {
-                  setScreen("auth")
-                } else {
-                  setScreen("form")
-                }
-              }}
-              style={{ width: "100%", background: "#25D366", color: "white", border: "none", padding: "16px", fontSize: "17px", borderRadius: "10px", cursor: "pointer", fontWeight: "bold", marginBottom: "12px" }}>
-              📱 Continue →
-            </button>
-            
-          </div>
-        </div>
-      )}
 
       {screen === "result" && (
         <div style={{ maxWidth: "720px", margin: "0 auto", padding: "40px 20px" }}>
@@ -929,33 +1068,13 @@ useEffect(() => {
             </div>
           )}
 
-          {!loading && !resultsUnlocked && (
-            <div style={{ background: "white", borderRadius: "16px", padding: "32px", marginBottom: "20px", textAlign: "center", border: "2px solid #25D366" }}>
-              <div style={{ fontSize: "48px", marginBottom: "12px" }}>📱</div>
-              <h3 style={{ color: "#25D366", marginBottom: "8px", fontSize: "20px" }}>Get Your Results On WhatsApp!</h3>
-              <p style={{ color: "#666", fontSize: "14px", lineHeight: "1.7", marginBottom: "20px" }}>
-                Tap below to receive your complete listing content, 12 keywords with search volume and 5 demo image sets directly on WhatsApp!
-              </p>
-              <button onClick={() => {
-                const message = encodeURIComponent(`Hi Imagined AI! Please send me my listing results for ${productName} in ${category} category. My email is ${user?.email}`)
-                window.open(`https://wa.me/919201462802?text=${message}`, '_blank')
-                setWhatsappCaptured(true)
-                setResultsUnlocked(true)
-              }}
-                style={{ width: "100%", background: "#25D366", color: "white", border: "none", padding: "16px", fontSize: "17px", borderRadius: "10px", cursor: "pointer", fontWeight: "bold", marginBottom: "12px" }}>
-                📱 Send To Imagined AI WhatsApp →
-              </button>
-              <p style={{ color: "#999", fontSize: "12px" }}>Your results will also be shown below</p>
-            </div>
-          )}
-
           {loading ? (
             <div style={{ background: "white", borderRadius: "16px", padding: "60px 40px", textAlign: "center" }}>
-              <div style={{ 
-                width: "60px", height: "60px", 
-                border: "6px solid #f0ebff", 
-                borderTop: "6px solid #4a00e0", 
-                borderRadius: "50%", 
+              <div style={{
+                width: "60px", height: "60px",
+                border: "6px solid #f0ebff",
+                borderTop: "6px solid #4a00e0",
+                borderRadius: "50%",
                 animation: "spin 1s linear infinite",
                 margin: "0 auto 20px"
               }}></div>
@@ -966,7 +1085,7 @@ useEffect(() => {
               <p style={{ color: "#4a00e0", fontWeight: "bold", fontSize: "18px", marginBottom: "8px" }}>{loadingMsg}</p>
               <div style={{ display: "flex", justifyContent: "center", gap: "8px", marginBottom: "16px" }}>
                 {["Uploading", "Analysing", "Creating", "Finalising"].map((step, i) => (
-                  <div key={i} style={{ 
+                  <div key={i} style={{
                     background: loadingStep >= i ? "#4a00e0" : "#e0d7ff",
                     width: "8px", height: "8px", borderRadius: "50%",
                     transition: "background 0.3s"
@@ -990,14 +1109,96 @@ useEffect(() => {
                 </div>
               )}
             </div>
-          ) : !resultsUnlocked ? (
-            <div style={{ background: "white", borderRadius: "16px", padding: "40px", textAlign: "center" }}>
-              <p style={{ fontSize: "48px", marginBottom: "16px" }}>🔒</p>
-              <h3 style={{ color: "#4a00e0", marginBottom: "8px" }}>Your Results Are Ready!</h3>
-              <p style={{ color: "#666", fontSize: "14px" }}>Click the WhatsApp button above to unlock your complete listing!</p>
-            </div>
+          ) : !(resultsUnlocked || user?.is_paid || communityJoined) ? (
+            /* ── COMMUNITY GATE — new free users only ── */
+            (
+              /* CHANGE 3: New free user — full community gate */
+              <div style={{ background: "white", borderRadius: "16px", padding: "32px", marginBottom: "20px", border: "2.5px solid #25D366" }}>
+                <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                  <div style={{ fontSize: "52px", marginBottom: "12px" }}>🎉</div>
+                  <h3 style={{ color: "#25D366", fontSize: "22px", marginBottom: "8px" }}>Your Listing Is Ready!</h3>
+                  <p style={{ color: "#555", fontSize: "15px", lineHeight: "1.6" }}>
+                    Join our FREE Sellers Community to get your complete results on WhatsApp!
+                  </p>
+                </div>
+
+                <div style={{ background: "#f0fff4", borderRadius: "12px", padding: "16px", marginBottom: "24px" }}>
+                  <p style={{ color: "#166534", fontSize: "14px", lineHeight: "2.2", margin: "0" }}>
+                    ✅ Daily trending Amazon keywords<br/>
+                    ✅ Before/after seller transformations<br/>
+                    ✅ Exclusive seller tips — daily<br/>
+                    ✅ Your results delivered FREE on WhatsApp
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    window.open('https://whatsapp.com/channel/0029Vb8Afwi5Ui2crcD8RJ1v', '_blank')
+                    if (!countdownActive && !countdownDone) {
+                      setCountdownActive(true)
+                    }
+                  }}
+                  style={{ width: "100%", background: "#25D366", color: "white", border: "none", padding: "16px", fontSize: "16px", borderRadius: "10px", cursor: "pointer", fontWeight: "bold", marginBottom: "12px" }}
+                >
+                  {countdownActive
+                    ? `Please join the channel... (${countdownSeconds})`
+                    : countdownDone
+                    ? '✅ Channel Joined!'
+                    : '📢 Join Imagined AI Sellers Channel →'}
+                </button>
+
+                <button
+                  onClick={joinCommunity}
+                  disabled={!countdownDone}
+                  style={{
+                    width: "100%",
+                    background: countdownDone ? "#25D366" : "#ccc",
+                    color: "white",
+                    border: "none",
+                    padding: "16px",
+                    fontSize: "16px",
+                    borderRadius: "10px",
+                    cursor: countdownDone ? "pointer" : "not-allowed",
+                    fontWeight: "bold",
+                    marginBottom: "16px",
+                    opacity: countdownDone ? 1 : 0.5
+                  }}
+                >
+                  ✅ I've Joined — Send My Results on WhatsApp!
+                </button>
+
+                <p style={{ color: "#999", fontSize: "12px", textAlign: "center", margin: "0" }}>
+                  🔒 Your results are saved — they will not expire
+                </p>
+              </div>
+            )
           ) : (
             <>
+              {/* CHANGE 5: Pro community card — non-blocking, dismissible, for paid users */}
+              {user?.is_paid && !proCardDismissed && (
+                <div style={{ background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px", border: "2px solid #ffd700", position: "relative" }}>
+                  <button
+                    onClick={() => setProCardDismissed(true)}
+                    style={{ position: "absolute", top: "12px", right: "12px", background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: "#999", lineHeight: 1 }}
+                  >✕</button>
+                  <div style={{ textAlign: "center", paddingRight: "20px" }}>
+                    <p style={{ fontSize: "28px", margin: "0 0 8px" }}>🏆</p>
+                    <h3 style={{ color: "#333", marginBottom: "8px", fontSize: "17px" }}>You have exclusive access to our Pro Sellers Community!</h3>
+                    <p style={{ color: "#666", fontSize: "13px", lineHeight: "1.7", marginBottom: "16px" }}>
+                      Connect with serious Amazon sellers — strategy, support and founder access
+                    </p>
+                    <a
+                      href="https://chat.whatsapp.com/DvKMi8ntT2JIYv8NUnz3Mo"
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: "inline-block", background: "#25D366", color: "white", padding: "12px 24px", borderRadius: "10px", fontSize: "15px", fontWeight: "bold", textDecoration: "none" }}
+                    >
+                      Join Pro Community →
+                    </a>
+                  </div>
+                </div>
+              )}
+
               {keywords.length > 0 && (
                 <div style={{ background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px" }}>
                   <h3 style={{ color: "#4a00e0", marginBottom: "16px", fontSize: "18px" }}>🔥 Top Keywords For Your Product</h3>
@@ -1124,7 +1325,7 @@ useEffect(() => {
                 </div>
               )}
 
-              {whatsappCaptured && credits >= 3 && generatedImages.filter(img => img.success).length > 0 && (
+              {(resultsUnlocked || user?.is_paid || communityJoined) && generatedImages.filter(img => img.success).length > 0 && (
                 <div style={{ background: "white", borderRadius: "16px", padding: "24px", marginBottom: "20px" }}>
                   <h3 style={{ color: "#4a00e0", marginBottom: "20px", fontSize: "18px" }}>🖼️ Your AI Generated Product Images</h3>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
@@ -1149,7 +1350,7 @@ useEffect(() => {
                                 textShadow: "1px 1px 2px rgba(0,0,0,0.8)",
                                 userSelect: "none",
                                 whiteSpace: "nowrap"
-                              }}>EcomImagined AI</p>
+                              }}>Imagined AI</p>
                             </div>
                           )}
                         </div>
@@ -1178,7 +1379,7 @@ useEffect(() => {
                   <div style={{ background: "#f0f7ff", borderRadius: "12px", padding: "16px", marginBottom: "20px", border: "1px solid #c0d8ff" }}>
                     <p style={{ color: "#0055aa", fontSize: "13px", margin: "0", fontWeight: "bold" }}>⚠️ Important Disclaimer</p>
                     <p style={{ color: "#0055aa", fontSize: "13px", margin: "8px 0 0", lineHeight: "1.7" }}>
-                      This content is AI generated. Please review carefully before publishing. EcomImagined AI is not responsible for any listing rejections.
+                      This content is AI generated. Please review carefully before publishing. Imagined AI is not responsible for any listing rejections.
                     </p>
                   </div>
                   <div style={{ display: "flex", gap: "12px" }}>
