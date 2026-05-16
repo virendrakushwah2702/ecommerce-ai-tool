@@ -1,123 +1,158 @@
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+export const config = {
+  runtime: 'edge',
+  maxDuration: 60
+}
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end()
+export default async function handler(req) {
+  const origin = req.headers.get('origin') || req.headers.get('referer') || ''
+
+  if (!origin.includes('ecom-imagined-ai.vercel.app') && !origin.includes('localhost') && !origin.includes('imaginedai.in')) {
+    return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 })
   }
 
-  const origin = req.headers.origin || req.headers.referer || ''
-  if (!origin.includes('ecom-imagined-ai.vercel.app') && !origin.includes('localhost') && !origin.includes('imaginedai.in')) {
-    return res.status(403).json({ error: 'Forbidden' })
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      }
+    })
   }
 
   try {
-    const { brand, productName, category, material, platform } = req.body
-    const CEREBRAS_KEY = process.env.CEREBRAS_KEY
+    const { brand, productName, category, material, platform, is_paid } = await req.json()
+    const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY
+    const GEMINI_KEY = process.env.GEMINI_KEY
 
-    // Build body once — reused in retries
-    const cerebraBody = JSON.stringify({
-      model: 'llama3.1-8b',
-      max_tokens: 2500,
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an Amazon India listing specialist with 15 years experience. You write keyword rich, Amazon policy compliant listing content that ranks high and converts buyers. Never use prohibited words: best, cheapest, guaranteed, number one, clinically proven, FDA approved. No special characters in titles.'
-        },
-        {
-          role: 'user',
-          content: `Write complete Amazon listing content for this product.
+    const systemPrompt = `You are a world class eCommerce product photographer and Amazon India listing specialist. Generate 4 UNIQUE AI image generation prompts AND complete listing content. Use NO markdown, NO headers, NO asterisks, NO hash symbols. Plain text only. Amazon policy compliant. No promotional language. No unverified health claims.`
 
+    const userPrompt = `Generate for this product:
 Brand: ${brand}
 Product: ${productName}
 Category: ${category}
-Key Ingredients or Materials: ${material}
-Platform: ${platform || 'Amazon'}
+Ingredients/Materials: ${material}
+Platform: ${platform}
 
-RESPOND IN THIS EXACT FORMAT:
+Use EXACTLY this format with these exact labels:
+
+IMAGE_PROMPT_1: [Main Product - Ultra HD studio photography, pure white background, perfect lighting, product label preserved exactly, square 1024x1024]
+
+IMAGE_PROMPT_2: [What's Inside infographic - ingredients shown around product, all text English, square 1024x1024]
+
+IMAGE_PROMPT_3: [How To Use infographic - numbered steps with product image, all text English, square 1024x1024]
+
+IMAGE_PROMPT_4: [Key Benefits infographic - benefit icons around product, all text English, square 1024x1024]
 
 LISTING_CONTENT:
 PRODUCT TITLE:
-(Keyword rich title, 150-200 characters. Capitalise First Letter Of Every Word. Include top Indian buyer search keywords for ${category}. Include key ingredients from ${material}. No special characters. No promotional words.)
+(Max 200 chars. Primary keyword + brand + benefit + size. Amazon optimized.)
 
 BULLET POINT 1:
-(50-60 words. Capitalised feature name followed by colon. Cover key ingredient benefits from ${material} with Ayurvedic or scientific basis. Include high volume keywords naturally.)
+(60-80 words. Top benefit + key ingredient from ${material}.)
 
 BULLET POINT 2:
-(50-60 words. Different feature. Application method and visible results specific to ${productName}.)
+(60-80 words. Second benefit. Different pain point.)
 
 BULLET POINT 3:
-(50-60 words. Different feature. Safety and natural composition referencing specific ingredients from ${material}.)
+(60-80 words. Usage method. How-to element.)
 
 BULLET POINT 4:
-(50-60 words. Different feature. Target user description — who benefits most from ${productName}.)
+(60-80 words. Quality and safety. Build trust.)
 
 BULLET POINT 5:
-(50-60 words. Different feature. What makes ${brand} different from mass market alternatives.)
+(60-80 words. Brand story. What makes ${brand} different.)
 
 PRODUCT DESCRIPTION:
-(Write 4 paragraphs. Paragraph 1: introduce ${productName} and its core promise. Paragraph 2: each ingredient from ${material} and its specific benefit. Paragraph 3: how to use step by step. Paragraph 4: who this is for and what problems it solves. No bullet points inside description. No unverified health claims. Include long tail keywords naturally.)
+(300-400 words. Flowing paragraphs. Product promise, ingredients, how to use, who it is for, brand values. Keywords natural. Amazon compliant.)
 
 SEARCH TERMS AND KEYWORDS:
-(List 20 search terms Indian buyers use on Amazon for ${category} products. Format each line exactly as: keyword | VOLUME where VOLUME is VERY HIGH, HIGH, or MEDIUM. Assign VERY HIGH to top 6, HIGH to next 8, MEDIUM to remaining 6. One keyword per line. Include Hindi transliterated keywords.)
+(30 keywords. Format each line exactly as: keyword | VOLUME. Assign VERY HIGH to top 8, HIGH to next 12, MEDIUM to remaining 10. Include Hindi transliterated keywords. One per line.)
 
 FLIPKART AND MEESHO SHORT DESCRIPTION:
-(80 words maximum. Warm conversational tone. Top 3 benefits of ${productName}. Key ingredients from ${material}. End with gentle call to action.)`
+(80 words max. Warm tone. Top 3 benefits. Key ingredients. Call to action.)`
+
+    // --- Gemini call (free users) ---
+    const callGemini = async () => {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+            generationConfig: { maxOutputTokens: 2500 }
+          })
         }
-      ]
+      )
+      const data = await res.json()
+      if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
+        throw new Error(data.error?.message || 'Gemini returned empty response')
+      }
+      return data.candidates[0].content.parts[0].text
+    }
+
+    // --- Claude call (paid users + Gemini fallback) ---
+    const callClaude = async () => {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'prompt-caching-2024-07-31'
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 2500,
+          stream: false,
+          system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+          messages: [{ role: 'user', content: userPrompt }]
+        })
+      })
+      const data = await res.json()
+      if (!data.content || !data.content[0]?.text) {
+        throw new Error('Claude returned empty response')
+      }
+      return data.content[0].text
+    }
+
+    let fullText
+
+    if (!is_paid) {
+      // Free user: try Gemini first (with one retry), fall back to Claude
+      try {
+        fullText = await callGemini()
+        console.log("API USED: Gemini 2.5 Flash-Lite — Free user — Cost: Rs.0")
+      } catch (geminiErr1) {
+        console.error('Gemini attempt 1 failed:', geminiErr1.message)
+        console.log('Gemini retry attempt...')
+        await new Promise(r => setTimeout(r, 2000))
+        try {
+          fullText = await callGemini()
+          console.log("API USED: Gemini 2.5 Flash-Lite — Free user (retry success) — Cost: Rs.0")
+        } catch (geminiErr2) {
+          console.error('Gemini attempt 2 failed, falling back to Claude:', geminiErr2.message)
+          fullText = await callClaude()
+          console.log("API USED: Claude Haiku FALLBACK — Gemini failed — Cost: Rs.0.88")
+        }
+      }
+    } else {
+      // Paid user: Claude only
+      fullText = await callClaude()
+      console.log("API USED: Claude Haiku — Paid user — Cost: Rs.0.88")
+    }
+
+    return new Response(JSON.stringify({ success: true, content: fullText }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
     })
 
-    const callCerebras = async () => {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 50000)
-      try {
-        const response = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-          method: 'POST',
-          signal: controller.signal,
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CEREBRAS_KEY}` },
-          body: cerebraBody
-        })
-        clearTimeout(timeoutId)
-        return await response.json()
-      } catch (err) {
-        clearTimeout(timeoutId)
-        if (err.name === 'AbortError') throw new Error('timeout')
-        throw err
-      }
-    }
-
-    // Try up to 3 times — handles queue_exceeded / high traffic
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 5000 * attempt))
-
-      let data
-      try {
-        data = await callCerebras()
-      } catch (err) {
-        if (err.message === 'timeout') {
-          return res.status(200).json({ success: false, error: 'Content generation timed out. Please try again.' })
-        }
-        if (attempt < 2) continue
-        return res.status(200).json({ success: false, error: err.message })
-      }
-
-      if (data.choices && data.choices[0]) {
-        return res.status(200).json({ success: true, content: data.choices[0].message.content })
-      }
-
-      const isRateLimit = data.error && (
-        data.error.code === 'queue_exceeded' ||
-        data.error.type === 'too_many_requests_error'
-      )
-      if (isRateLimit && attempt < 2) continue
-
-      return res.status(200).json({ success: false, error: isRateLimit ? 'AI service is busy. Please try again in 30 seconds.' : JSON.stringify(data) })
-    }
-
-    return res.status(200).json({ success: false, error: 'AI service is busy. Please try again in 30 seconds.' })
-
   } catch (error) {
-    return res.status(200).json({ success: false, error: error.message })
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    })
   }
 }

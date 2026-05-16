@@ -32,9 +32,10 @@ export default async function handler(req, res) {
         if (user) {
           await supabase
             .from('users')
-            .update({ 
+            .update({
               credits: user.credits + payment.credits,
-              plan: payment.plan
+              plan: payment.plan,
+              is_paid: true
             })
             .eq('email', payment.email)
         }
