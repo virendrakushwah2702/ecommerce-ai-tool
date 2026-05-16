@@ -16,12 +16,12 @@ export default async function handler(req, res) {
     console.log("AUTH_TOKEN exists:", !!AUTH_TOKEN)
 
     const plans = {
-      starter: { amount: 199, credits: 15, name: 'Starter Plan 15 Credits' },
-      growth: { amount: 499, credits: 40, name: 'Growth Plan 40 Credits' },
-      pro: { amount: 1099, credits: 100, name: 'Pro Plan 100 Credits' },
-      monthly: { amount: 999, credits: 60, name: 'Monthly Plan 60 Credits' },
+      starter: { amount: 199, credits: 18, name: 'Starter Plan - 6 Generations' },
+      growth: { amount: 499, credits: 48, name: 'Growth Plan - 16 Generations' },
+      pro: { amount: 1099, credits: 120, name: 'Pro Plan - 40 Generations' },
+      monthly: { amount: 999, credits: 120, name: 'Monthly Plan - 40 Generations/month' },
       quarterly: { amount: 2599, credits: 180, name: 'Quarterly Plan 180 Credits' },
-      agency: { amount: 4999, credits: 200, name: 'Agency Plan 200 Credits' }
+      agency: { amount: 4999, credits: 597, name: 'Agency Plan - 199 Generations' }
     }
 
     const selectedPlan = plans[plan]

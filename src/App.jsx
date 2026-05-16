@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { supabase } from "./supabase.js"
+import "./protect.js"
 
 const CATEGORIES = [
   "Hair Care", "Skin Care", "Personal Care",
@@ -788,10 +789,10 @@ useEffect(() => {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
             {[
-              { name: "Starter", key: "starter", credits: 15, price: "₹199", generations: "5 generations", popular: false },
-              { name: "Growth", key: "growth", credits: 40, price: "₹499", generations: "13 generations", popular: true },
-              { name: "Pro", key: "pro", credits: 100, price: "₹1,099", generations: "33 generations", popular: false },
-              { name: "Agency", key: "agency", credits: 200, price: "₹4,999", generations: "66 generations", popular: false }
+              { name: "Starter", key: "starter", credits: 18, price: "₹199", generations: "6 generations", popular: false },
+              { name: "Growth", key: "growth", credits: 48, price: "₹499", generations: "16 generations", popular: true },
+              { name: "Pro", key: "pro", credits: 120, price: "₹1,099", generations: "40 generations", popular: false },
+              { name: "Agency", key: "agency", credits: 597, price: "₹4,999", generations: "199 generations", popular: false }
             ].map((plan, i) => (
               <div key={i} style={{ background: plan.popular ? "#4a00e0" : "white", borderRadius: "16px", padding: "24px", border: plan.popular ? "none" : "2px solid #e0d7ff", textAlign: "center", position: "relative" }}>
                 {plan.popular && <div style={{ position: "absolute", top: "-12px", left: "50%", transform: "translateX(-50%)", background: "#ffd700", borderRadius: "20px", padding: "4px 16px", fontSize: "12px", fontWeight: "bold", color: "#333" }}>MOST POPULAR</div>}
@@ -808,7 +809,7 @@ useEffect(() => {
 
           <div style={{ background: "white", borderRadius: "16px", padding: "24px", textAlign: "center", border: "2px solid #e0d7ff" }}>
             <h3 style={{ color: "#333", marginBottom: "8px" }}>Monthly Subscription</h3>
-            <p style={{ color: "#666", fontSize: "13px", marginBottom: "12px" }}>150 credits/month • 50 generations/month</p>
+            <p style={{ color: "#666", fontSize: "13px", marginBottom: "12px" }}>120 credits/month • 40 generations/month</p>
             <p style={{ color: "#4a00e0", fontSize: "28px", fontWeight: "bold", margin: "0 0 16px" }}>₹999/month</p>
             <button onClick={() => handlePayment('monthly', 'Monthly Plan', 999)}
             style={{ background: "#4a00e0", color: "white", border: "none", padding: "12px 40px", borderRadius: "8px", cursor: "pointer", fontSize: "15px", fontWeight: "bold" }}>
